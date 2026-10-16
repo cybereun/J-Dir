@@ -7,7 +7,7 @@
 **Windows를 위한 고성능 4분할(Quad-Pane) 전문가용 파일 탐색기**
 
 [![Developer](https://img.shields.io/badge/Developer-Lebi__Cybereun-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/cybereun)
-[![Release](https://img.shields.io/badge/Release-v1.0.2-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.1.0-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/cybereun/J-Dir/releases)
 [![Tech Stack](https://img.shields.io/badge/Built%20With-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-f59e0b?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/cybereun/J-Dir)
 
@@ -67,6 +67,17 @@
 
 ---
 
+## v1.1.0 변경 사항
+
+- **진행률 표시 + 작업 취소**: 복사·이동·압축·압축 풀기·폴더 용량 계산·검색을 진행 카드에서 확인하고 언제든 취소할 수 있습니다. (UI가 멈추지 않습니다)
+- **폴더 자동 갱신**: 다른 프로그램/다른 패널에서 파일이 바뀌면 목록이 자동으로 갱신됩니다. (창에 다시 포커스가 올 때도 갱신)
+- **파일 검색 (`Ctrl+F`)**: 하위 폴더 포함, 와일드카드·크기·수정일 조건, 결과에서 바로 열기/위치 이동.
+- **되돌리기 (`Ctrl+Z`)**: 이동·복사·이름 변경·새 폴더/파일·압축/해제를 되돌립니다. (휴지통 삭제는 Windows 휴지통에서 복원)
+- **Windows 클립보드 연동**: `Ctrl+C`/`Ctrl+X`/`Ctrl+V`가 Windows 탐색기와 서로 호환됩니다.
+- **속성 창 (`Alt+Enter`)**, **경로/이름 복사**, **ZIP 압축 / 압축 풀기** (한글 CP949 zip 지원)
+
+---
+
 ## v1.0.2 변경 사항
 
 - **드래그 앤 드롭 복구**: 패널 간, 폴더 행, 왼쪽 트리·즐겨찾기·드라이브·주소 경로로 끌어서 복사/이동합니다. (Ctrl=복사, Shift=이동, 기본: 같은 드라이브 이동 / 다른 드라이브 복사)
@@ -109,7 +120,7 @@
 
 ### 방법 1: 설치 프로그램(Installer)으로 설치 (권장)
 1. [**GitHub Releases 페이지**](https://github.com/cybereun/J-Dir/releases/latest)로 이동합니다.
-2. 최신 릴리즈의 **`J-Dir_1.0.2_x64-setup.exe`** 파일을 다운로드합니다.
+2. 최신 릴리즈의 **`J-Dir_1.1.0_x64-setup.exe`** 파일을 다운로드합니다.
 3. 다운로드한 설치 파일을 실행하면 Windows에 **J-Dir**가 설치되며 바탕화면 및 시작 메뉴 바로가기가 생성됩니다.
 4. 이후 새로운 버전이 GitHub에 릴리즈되면 앱 실행 시 자동으로 업데이트 알림창이 열리며 원클릭으로 업데이트됩니다.
 

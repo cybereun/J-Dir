@@ -1,12 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
+  ClipboardFiles,
   ConflictPolicy,
   DriveInfo,
   FileActionReport,
   FileEntry,
   FilePreviewData,
   FolderSizeStats,
+  JobProgressEvent,
+  PathPair,
   QDirWorkspaceConfig,
+  SearchQuery,
+  SearchResult,
   SpecialPaths,
   UpdateCheckResult,
 } from "../types/jdir";
@@ -135,11 +141,92 @@ export async function apiGetSpecialPaths(): Promise<SpecialPaths> {
   return invoke<SpecialPaths>("cmd_get_special_paths");
 }
 
-export async function apiCalculateFolderSize(path: string): Promise<FolderSizeStats> {
+export async function apiCalculateFolderSize(
+  path: string,
+  jobId: string
+): Promise<FolderSizeStats> {
   if (!isTauriRuntime()) {
     return { path, totalBytes: 1024 * 1024 * 12, fileCount: 42, dirCount: 5 };
   }
-  return invoke<FolderSizeStats>("cmd_calculate_folder_size", { path });
+  return invoke<FolderSizeStats>("cmd_calculate_folder_size", { path, jobId });
+}
+
+export async function apiCancelJob(jobId: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("cmd_cancel_job", { jobId });
+}
+
+export async function apiJobDone(jobId: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("cmd_job_done", { jobId });
+}
+
+/** Subscribes to progress events of long-running jobs. Resolves to an unsubscribe function. */
+export async function onJobProgress(cb: (ev: JobProgressEvent) => void): Promise<() => void> {
+  if (!isTauriRuntime()) return () => {};
+  return listen<JobProgressEvent>("jdir://progress", (e) => cb(e.payload));
+}
+
+/** Subscribes to file-system change notifications (path of the changed folder / item). */
+export async function onFsChanged(cb: (path: string) => void): Promise<() => void> {
+  if (!isTauriRuntime()) return () => {};
+  return listen<string>("jdir://fs-changed", (e) => cb(e.payload));
+}
+
+export async function apiWatchDirs(paths: string[]): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("cmd_watch_dirs", { paths });
+}
+
+export async function apiRestoreMoves(pairs: PathPair[]): Promise<FileActionReport> {
+  return invoke<FileActionReport>("cmd_restore_moves", { pairs });
+}
+
+export async function apiSetAttributes(
+  paths: string[],
+  readonly?: boolean,
+  hidden?: boolean
+): Promise<FileActionReport> {
+  return invoke<FileActionReport>("cmd_set_attributes", { paths, readonly, hidden });
+}
+
+export async function apiSearchFiles(
+  root: string,
+  query: SearchQuery,
+  jobId: string
+): Promise<SearchResult> {
+  return invoke<SearchResult>("cmd_search_files", { root, query, jobId });
+}
+
+export async function apiZipItems(
+  sources: string[],
+  destZip: string,
+  jobId: string
+): Promise<string> {
+  return invoke<string>("cmd_zip_items", { sources, destZip, jobId });
+}
+
+export async function apiUnzip(
+  zipPath: string,
+  destDir: string,
+  jobId: string
+): Promise<string> {
+  return invoke<string>("cmd_unzip", { zipPath, destDir, jobId });
+}
+
+export async function apiClipboardSetFiles(paths: string[], cut: boolean): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("cmd_clipboard_set_files", { paths, cut });
+}
+
+export async function apiClipboardGetFiles(): Promise<ClipboardFiles | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<ClipboardFiles | null>("cmd_clipboard_get_files");
+}
+
+export async function apiClipboardClear(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("cmd_clipboard_clear");
 }
 
 export async function apiCheckConflicts(
@@ -152,24 +239,28 @@ export async function apiCheckConflicts(
 export async function apiCopyItems(
   sources: string[],
   destinationDir: string,
-  policy: ConflictPolicy = "rename"
+  policy: ConflictPolicy,
+  jobId: string
 ): Promise<FileActionReport> {
   return invoke<FileActionReport>("cmd_copy_items", {
     sources,
     destinationDir,
     policy,
+    jobId,
   });
 }
 
 export async function apiMoveItems(
   sources: string[],
   destinationDir: string,
-  policy: ConflictPolicy = "rename"
+  policy: ConflictPolicy,
+  jobId: string
 ): Promise<FileActionReport> {
   return invoke<FileActionReport>("cmd_move_items", {
     sources,
     destinationDir,
     policy,
+    jobId,
   });
 }
 
@@ -297,9 +388,9 @@ export async function apiCheckForUpdates(): Promise<UpdateCheckResult> {
   if (!isTauriRuntime()) {
     return {
       updateAvailable: false,
-      currentVersion: "1.0.2",
-      latestVersion: "1.0.2",
-      releaseName: "J-Dir v1.0.2",
+      currentVersion: "1.1.0",
+      latestVersion: "1.1.0",
+      releaseName: "J-Dir v1.1.0",
       releaseNotes: "최신 버전을 사용 중입니다.",
       publishedAt: new Date().toISOString(),
       downloadUrl: "",

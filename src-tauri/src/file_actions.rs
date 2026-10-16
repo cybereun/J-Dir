@@ -1,11 +1,14 @@
 use crate::fs_ops::normalize_windows_path;
-use crate::models::{FileActionError, FileActionReport, FileEntry};
+use crate::jobs::Reporter;
+use crate::models::{FileActionError, FileActionReport, FileEntry, PathPair};
 use chrono::{DateTime, Local, TimeZone};
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use walkdir::WalkDir;
 
-fn resolve_collision_path(dest_dir: &Path, file_name: &str, overwrite: bool) -> PathBuf {
+pub fn resolve_collision_path(dest_dir: &Path, file_name: &str, overwrite: bool) -> PathBuf {
     let candidate = dest_dir.join(file_name);
     if overwrite || !candidate.exists() {
         return candidate;
@@ -65,13 +68,58 @@ fn item_in_dir(src: &Path, dest: &Path) -> bool {
     src.parent().is_some_and(|p| is_same_dir(p, dest))
 }
 
-fn exists_any(p: &Path) -> bool {
+pub fn exists_any(p: &Path) -> bool {
     fs::symlink_metadata(p).is_ok()
+}
+
+const CANCEL_MSG: &str = "사용자가 작업을 취소했습니다.";
+const CHUNK_COPY_THRESHOLD: u64 = 8 * 1024 * 1024;
+
+/// Copies one file, reporting progress. Large files are streamed in chunks so the job can be cancelled.
+fn copy_file_progress(src: &Path, dst: &Path, rep: &Reporter) -> Result<(), String> {
+    let meta = fs::metadata(src).map_err(|e| format!("파일 정보 읽기 실패 ({}): {}", src.display(), e))?;
+    let name = src
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if rep.is_cancelled() {
+        return Err(CANCEL_MSG.to_string());
+    }
+    if meta.len() < CHUNK_COPY_THRESHOLD {
+        fs::copy(src, dst).map_err(|e| format!("파일 복사 실패 ({}): {}", src.display(), e))?;
+        rep.add_bytes(meta.len(), &name);
+        return Ok(());
+    }
+
+    let mut input = fs::File::open(src).map_err(|e| format!("파일 열기 실패 ({}): {}", src.display(), e))?;
+    let mut output = fs::File::create(dst).map_err(|e| format!("파일 생성 실패 ({}): {}", dst.display(), e))?;
+    let mut buf = vec![0u8; 1024 * 1024];
+    loop {
+        if rep.is_cancelled() {
+            drop(output);
+            let _ = fs::remove_file(dst);
+            return Err(CANCEL_MSG.to_string());
+        }
+        let n = input.read(&mut buf).map_err(|e| format!("파일 읽기 실패: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        output
+            .write_all(&buf[..n])
+            .map_err(|e| format!("파일 쓰기 실패 ({}): {}", dst.display(), e))?;
+        rep.add_bytes(n as u64, &name);
+    }
+    if let Ok(modified) = meta.modified() {
+        let _ = output.set_modified(modified);
+    }
+    drop(output);
+    let _ = fs::set_permissions(dst, meta.permissions());
+    Ok(())
 }
 
 /// Copies a directory tree. Junctions/symlinked folders are skipped (to avoid infinite
 /// recursion); returns the number of skipped links.
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<u32, String> {
+fn copy_dir_recursive(src: &Path, dst: &Path, rep: &Reporter) -> Result<u32, String> {
     if !dst.exists() {
         fs::create_dir_all(dst).map_err(|e| format!("폴더 생성 실패 ({}): {}", dst.display(), e))?;
     }
@@ -85,13 +133,23 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<u32, String> {
                 skipped += 1;
                 continue;
             }
-            skipped += copy_dir_recursive(&item_path, &target_path)?;
+            skipped += copy_dir_recursive(&item_path, &target_path, rep)?;
         } else {
-            fs::copy(&item_path, &target_path)
-                .map_err(|e| format!("파일 복사 실패 ({}): {}", item_path.display(), e))?;
+            copy_file_progress(&item_path, &target_path, rep)?;
         }
     }
     Ok(skipped)
+}
+
+/// Total bytes of a file or directory tree (links are not followed).
+fn tree_size(path: &Path) -> u64 {
+    WalkDir::new(path)
+        .follow_links(false)
+        .into_iter()
+        .flatten()
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
+        .sum()
 }
 
 /// Returns names of sources that would collide with an existing item in `destination_dir`.
@@ -142,6 +200,7 @@ pub fn copy_items(
     sources: Vec<String>,
     destination_dir: String,
     policy: String,
+    rep: &Reporter,
 ) -> Result<FileActionReport, String> {
     let dest = normalize_windows_path(&destination_dir);
     if !dest.exists() || !dest.is_dir() {
@@ -149,8 +208,14 @@ pub fn copy_items(
     }
 
     let mut report = FileActionReport::default();
+    let total_bytes: u64 = sources.iter().map(|s| tree_size(Path::new(s))).sum();
+    rep.set_totals(total_bytes, sources.len() as u64);
 
     for src_str in sources {
+        if rep.is_cancelled() {
+            report.cancelled = true;
+            break;
+        }
         let src = PathBuf::from(&src_str);
         if !src.exists() {
             report.failed.push(FileActionError {
@@ -183,16 +248,29 @@ pub fn copy_items(
             if is_same_dir(&target, &src) || is_inside(&target, &src) {
                 Err("상위 폴더를 자기 자신의 하위 폴더로 복사할 수 없습니다.".to_string())
             } else {
-                copy_dir_recursive(&src, &target).map(|_| ())
+                copy_dir_recursive(&src, &target, rep).map(|_| ())
             }
         } else {
-            fs::copy(&src, &target)
-                .map(|_| ())
-                .map_err(|e| format!("복사 오류: {}", e))
+            copy_file_progress(&src, &target, rep)
         };
 
         match res {
-            Ok(()) => report.succeeded.push(target.to_string_lossy().to_string()),
+            Ok(()) => {
+                let target_str = target.to_string_lossy().to_string();
+                report.pairs.push(PathPair { from: src_str, to: target_str.clone() });
+                report.succeeded.push(target_str);
+                rep.item_done(&file_name);
+            }
+            Err(err) if err == CANCEL_MSG => {
+                // remove the partially copied item so no half-written tree is left behind
+                if !exists_any(&src) || target != src {
+                    if target.is_dir() {
+                        let _ = fs::remove_dir_all(&target);
+                    }
+                }
+                report.cancelled = true;
+                break;
+            }
             Err(err) => report.failed.push(FileActionError {
                 path: src_str,
                 error: err,
@@ -207,6 +285,7 @@ pub fn move_items(
     sources: Vec<String>,
     destination_dir: String,
     policy: String,
+    rep: &Reporter,
 ) -> Result<FileActionReport, String> {
     let dest = normalize_windows_path(&destination_dir);
     if !dest.exists() || !dest.is_dir() {
@@ -214,8 +293,14 @@ pub fn move_items(
     }
 
     let mut report = FileActionReport::default();
+    // Byte totals are only known lazily (when a rename has to fall back to copy+delete).
+    rep.set_totals(0, sources.len() as u64);
 
     for src_str in sources {
+        if rep.is_cancelled() {
+            report.cancelled = true;
+            break;
+        }
         let src = PathBuf::from(&src_str);
         if !src.exists() {
             report.failed.push(FileActionError {
@@ -259,10 +344,16 @@ pub fn move_items(
 
         // Try fast fs::rename first; fallback to copy + remove across volumes
         match fs::rename(&src, &target) {
-            Ok(()) => report.succeeded.push(target.to_string_lossy().to_string()),
+            Ok(()) => {
+                let target_str = target.to_string_lossy().to_string();
+                report.pairs.push(PathPair { from: src_str, to: target_str.clone() });
+                report.succeeded.push(target_str);
+                rep.item_done(&file_name);
+            }
             Err(_) => {
+                rep.add_total_bytes(tree_size(&src));
                 let fallback = if src.is_dir() {
-                    copy_dir_recursive(&src, &target).and_then(|skipped| {
+                    copy_dir_recursive(&src, &target, rep).and_then(|skipped| {
                         if skipped > 0 {
                             Err("링크(정션) 폴더가 포함되어 있어 원본을 유지했습니다.".to_string())
                         } else {
@@ -270,12 +361,23 @@ pub fn move_items(
                         }
                     })
                 } else {
-                    fs::copy(&src, &target)
-                        .map_err(|e| e.to_string())
+                    copy_file_progress(&src, &target, rep)
                         .and_then(|_| fs::remove_file(&src).map_err(|e| e.to_string()))
                 };
                 match fallback {
-                    Ok(()) => report.succeeded.push(target.to_string_lossy().to_string()),
+                    Ok(()) => {
+                        let target_str = target.to_string_lossy().to_string();
+                        report.pairs.push(PathPair { from: src_str, to: target_str.clone() });
+                        report.succeeded.push(target_str);
+                        rep.item_done(&file_name);
+                    }
+                    Err(err) if err == CANCEL_MSG => {
+                        if src.is_dir() && target.is_dir() {
+                            let _ = fs::remove_dir_all(&target);
+                        }
+                        report.cancelled = true;
+                        break;
+                    }
                     Err(err) => report.failed.push(FileActionError {
                         path: src_str,
                         error: format!("이동 실패: {}", err),
@@ -285,6 +387,105 @@ pub fn move_items(
         }
     }
 
+    Ok(report)
+}
+
+/// Reverts earlier moves/renames: moves every `to` back to its `from` location.
+pub fn restore_moves(pairs: Vec<PathPair>) -> Result<FileActionReport, String> {
+    let mut report = FileActionReport::default();
+    for pair in pairs {
+        let from = PathBuf::from(&pair.from);
+        let to = PathBuf::from(&pair.to);
+        if !exists_any(&to) {
+            report.failed.push(FileActionError {
+                path: pair.to,
+                error: "되돌릴 항목을 찾을 수 없습니다.".to_string(),
+            });
+            continue;
+        }
+        if exists_any(&from) {
+            report.failed.push(FileActionError {
+                path: pair.from,
+                error: "원래 위치에 같은 이름의 항목이 이미 있습니다.".to_string(),
+            });
+            continue;
+        }
+        if let Some(parent) = from.parent() {
+            if !parent.is_dir() {
+                report.failed.push(FileActionError {
+                    path: pair.from,
+                    error: "원래 폴더가 더 이상 존재하지 않습니다.".to_string(),
+                });
+                continue;
+            }
+        }
+        let noop = Reporter::noop();
+        let res = fs::rename(&to, &from).or_else(|_| {
+            if to.is_dir() {
+                copy_dir_recursive(&to, &from, &noop)
+                    .map_err(std::io::Error::other)
+                    .and_then(|_| fs::remove_dir_all(&to))
+            } else {
+                copy_file_progress(&to, &from, &noop)
+                    .map_err(std::io::Error::other)
+                    .and_then(|_| fs::remove_file(&to))
+            }
+        });
+        match res {
+            Ok(()) => report.succeeded.push(pair.from),
+            Err(e) => report.failed.push(FileActionError {
+                path: pair.to,
+                error: format!("되돌리기 실패: {}", e),
+            }),
+        }
+    }
+    Ok(report)
+}
+
+/// Sets / clears the read-only and hidden attributes (None leaves the flag unchanged).
+pub fn set_attributes(
+    paths: Vec<String>,
+    readonly: Option<bool>,
+    hidden: Option<bool>,
+) -> Result<FileActionReport, String> {
+    let mut report = FileActionReport::default();
+    for path in paths {
+        #[cfg(windows)]
+        let res: Result<(), String> = {
+            use windows_sys::Win32::Storage::FileSystem::{GetFileAttributesW, SetFileAttributesW};
+            let wide: Vec<u16> = path.encode_utf16().chain([0]).collect();
+            let current = unsafe { GetFileAttributesW(wide.as_ptr()) };
+            if current == 0xFFFF_FFFF {
+                Err("속성을 읽을 수 없습니다.".to_string())
+            } else {
+                let mut attrs = current;
+                for (flag, want) in [(0x1u32, readonly), (0x2u32, hidden)] {
+                    match want {
+                        Some(true) => attrs |= flag,
+                        Some(false) => attrs &= !flag,
+                        None => {}
+                    }
+                }
+                if attrs == 0 {
+                    attrs = 0x80; // FILE_ATTRIBUTE_NORMAL
+                }
+                if attrs == current || unsafe { SetFileAttributesW(wide.as_ptr(), attrs) } != 0 {
+                    Ok(())
+                } else {
+                    Err("속성을 변경하지 못했습니다.".to_string())
+                }
+            }
+        };
+        #[cfg(not(windows))]
+        let res: Result<(), String> = {
+            let _ = (readonly, hidden);
+            Ok(())
+        };
+        match res {
+            Ok(()) => report.succeeded.push(path),
+            Err(error) => report.failed.push(FileActionError { path, error }),
+        }
+    }
     Ok(report)
 }
 
@@ -361,7 +562,7 @@ pub fn delete_items(paths: Vec<String>, permanent: bool) -> Result<FileActionRep
         }
     }
 
-    Ok(FileActionReport { succeeded, failed, skipped: Vec::new() })
+    Ok(FileActionReport { succeeded, failed, ..Default::default() })
 }
 
 pub fn rename_item(path: String, new_name: String) -> Result<String, String> {
@@ -569,6 +770,7 @@ mod tests {
             vec![renamed.clone()],
             dst_dir.path().to_string_lossy().to_string(),
             "rename".to_string(),
+            &Reporter::noop(),
         )
         .unwrap();
         assert_eq!(copy_rep.succeeded.len(), 1);
@@ -594,18 +796,18 @@ mod tests {
         // an item already inside the destination is never a conflict
         assert!(check_conflicts(vec![src.clone()], a_s.clone()).unwrap().is_empty());
 
-        let skip = copy_items(vec![src.clone()], b_s.clone(), "skip".into()).unwrap();
+        let skip = copy_items(vec![src.clone()], b_s.clone(), "skip".into(), &Reporter::noop()).unwrap();
         assert_eq!(skip.skipped.len(), 1);
         assert_eq!(fs::read_to_string(b.path().join("x.txt")).unwrap(), "old");
 
-        let keep = copy_items(vec![src.clone()], b_s.clone(), "rename".into()).unwrap();
+        let keep = copy_items(vec![src.clone()], b_s.clone(), "rename".into(), &Reporter::noop()).unwrap();
         assert!(keep.succeeded[0].ends_with("x (1).txt"));
 
-        copy_items(vec![src.clone()], b_s.clone(), "overwrite".into()).unwrap();
+        copy_items(vec![src.clone()], b_s.clone(), "overwrite".into(), &Reporter::noop()).unwrap();
         assert_eq!(fs::read_to_string(b.path().join("x.txt")).unwrap(), "new");
 
         // moving into its own folder is a no-op (no "x (1).txt" duplicate)
-        let mv = move_items(vec![src.clone()], a_s, "rename".into()).unwrap();
+        let mv = move_items(vec![src.clone()], a_s, "rename".into(), &Reporter::noop()).unwrap();
         assert_eq!(mv.skipped.len(), 1);
         assert!(Path::new(&src).exists());
         assert!(!a.path().join("x (1).txt").exists());

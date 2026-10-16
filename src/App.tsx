@@ -5,12 +5,14 @@ import {
   ConflictPolicy,
   DriveInfo,
   FileEntry,
+  JobState,
   LayoutMode,
   PaneState,
   PaneTab,
   QuickLinkItem,
   SavedQdrPreset,
   SortField,
+  UndoOp,
   UpdateCheckResult,
   ViewMode,
 } from "./types/jdir";
@@ -21,9 +23,21 @@ import {
   qdirViewModeNumberToViewMode,
 } from "./utils/colorFilter";
 import {
+  apiCancelJob,
   apiCheckConflicts,
   apiCheckForUpdates,
+  apiClipboardClear,
+  apiClipboardGetFiles,
+  apiClipboardSetFiles,
   apiCopyItems,
+  apiJobDone,
+  apiOpenItem,
+  apiRestoreMoves,
+  apiUnzip,
+  apiWatchDirs,
+  apiZipItems,
+  onFsChanged,
+  onJobProgress,
   apiDeleteItems,
   apiImportQDirConfig,
   apiInstallUpdateAndRestart,
@@ -35,6 +49,9 @@ import { DirectoryTree } from "./components/DirectoryTree";
 import { ExplorerPane } from "./components/ExplorerPane";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { GlobalFooter } from "./components/GlobalFooter";
+import { JobPanel } from "./components/JobPanel";
+import { PropertiesModal } from "./components/PropertiesModal";
+import { SearchModal } from "./components/SearchModal";
 import {
   ColorFilterModal,
   ConfirmDeleteDialog,
@@ -263,7 +280,7 @@ export const App: React.FC = () => {
 
   // Modals state
   const [activeModal, setActiveModal] = useState<
-    "color" | "presets" | "export" | "update" | null
+    "color" | "presets" | "export" | "update" | "search" | null
   >(null);
   const [savedPresets, setSavedPresets] = useState<SavedQdrPreset[]>(() => {
     try {
@@ -298,7 +315,16 @@ export const App: React.FC = () => {
     mode: "copy" | "move";
     resolve: (policy: ConflictPolicy | null) => void;
   } | null>(null);
-  const dialogOpen = activeModal !== null || pendingDelete !== null || conflictPrompt !== null;
+  const [propsEntries, setPropsEntries] = useState<FileEntry[] | null>(null);
+  const [jobs, setJobs] = useState<Record<string, JobState>>({});
+  const [paneRefresh, setPaneRefresh] = useState<number[]>([0, 0, 0, 0]);
+  const undoStackRef = useRef<UndoOp[]>([]);
+  const jobSeqRef = useRef(0);
+  const dialogOpen =
+    activeModal !== null ||
+    pendingDelete !== null ||
+    conflictPrompt !== null ||
+    propsEntries !== null;
 
   const notify = useCallback((msg: string, isError = false) => {
     setToast({ msg, isError });
@@ -575,6 +601,8 @@ export const App: React.FC = () => {
     (paneIndex: number, mode: "copy" | "cut", paths: string[]) => {
       if (paths.length === 0) return;
       setClipboard({ mode, paths, sourcePaneIndex: paneIndex });
+      // Also publish to the Windows clipboard so Explorer / other apps can paste these files.
+      apiClipboardSetFiles(paths, mode === "cut").catch(() => {});
       notify(
         `${paths.length}개 항목이 클립보드에 ${
           mode === "copy" ? "복사" : "잘라내기"
@@ -583,6 +611,98 @@ export const App: React.FC = () => {
     },
     [notify]
   );
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    onJobProgress((ev) => {
+      setJobs((prev) =>
+        prev[ev.jobId]
+          ? {
+              ...prev,
+              [ev.jobId]: {
+                ...prev[ev.jobId],
+                doneBytes: ev.doneBytes,
+                totalBytes: ev.totalBytes,
+                doneItems: ev.doneItems,
+                totalItems: ev.totalItems,
+                current: ev.current,
+              },
+            }
+          : prev
+      );
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  /** Runs a long operation with a progress card + cancel button. */
+  const runJob = useCallback(
+    async <T,>(label: string, fn: (jobId: string) => Promise<T>): Promise<T> => {
+      const id = `job-${Date.now()}-${jobSeqRef.current++}`;
+      setJobs((prev) => ({
+        ...prev,
+        [id]: {
+          id,
+          label,
+          doneBytes: 0,
+          totalBytes: 0,
+          doneItems: 0,
+          totalItems: 0,
+          current: "",
+          cancelling: false,
+        },
+      }));
+      try {
+        return await fn(id);
+      } finally {
+        apiJobDone(id).catch(() => {});
+        setJobs((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    },
+    []
+  );
+
+  const cancelJob = useCallback((id: string) => {
+    apiCancelJob(id).catch(() => {});
+    setJobs((prev) => (prev[id] ? { ...prev, [id]: { ...prev[id], cancelling: true } } : prev));
+  }, []);
+
+  const pushUndo = useCallback((op: UndoOp) => {
+    undoStackRef.current.push(op);
+    if (undoStackRef.current.length > 50) undoStackRef.current.shift();
+  }, []);
+
+  const performUndo = useCallback(async () => {
+    const op = undoStackRef.current.pop();
+    if (!op) {
+      notify("되돌릴 작업이 없습니다.");
+      return;
+    }
+    try {
+      const report =
+        op.kind === "move-back"
+          ? await apiRestoreMoves(op.pairs)
+          : await apiDeleteItems(op.paths, false);
+      setRefreshTrigger((t) => t + 1);
+      if (report.failed.length > 0) {
+        notify(`되돌리기 실패 (${op.label}): ${report.failed[0].error}`, true);
+      } else {
+        notify(`되돌렸습니다: ${op.label}`);
+      }
+    } catch (err) {
+      notify(String(err), true);
+    }
+  }, [notify]);
 
   const askConflictPolicy = useCallback(
     (names: string[], mode: "copy" | "move") =>
@@ -611,13 +731,27 @@ export const App: React.FC = () => {
           }
           policy = chosen;
         }
-        const report =
+        const report = await runJob(label, (jobId) =>
           mode === "copy"
-            ? await apiCopyItems(paths, destDir, policy)
-            : await apiMoveItems(paths, destDir, policy);
+            ? apiCopyItems(paths, destDir, policy, jobId)
+            : apiMoveItems(paths, destDir, policy, jobId)
+        );
 
         setRefreshTrigger((t) => t + 1);
         const skippedCount = report.skipped?.length ?? 0;
+        const pairs = report.pairs ?? [];
+        // Overwriting destroys the previous file, so it cannot be undone safely.
+        if (pairs.length > 0 && policy !== "overwrite") {
+          pushUndo(
+            mode === "copy"
+              ? { label: `${label}`, kind: "trash", paths: pairs.map((p) => p.to) }
+              : { label: `${label}`, kind: "move-back", pairs }
+          );
+        }
+        if (report.cancelled) {
+          notify(`작업을 취소했습니다 (${report.succeeded.length}개 완료).`, true);
+          return false;
+        }
         if (report.failed.length > 0) {
           notify(
             `성공 ${report.succeeded.length}개 / 실패 ${report.failed.length}개: ${report.failed[0].error}`,
@@ -638,28 +772,48 @@ export const App: React.FC = () => {
         return false;
       }
     },
-    [askConflictPolicy, notify]
+    [askConflictPolicy, notify, runJob, pushUndo]
   );
 
   const handlePasteFromClipboard = useCallback(
     async (targetPaneIndex: number) => {
-      if (!clipboard || clipboard.paths.length === 0) return;
+      // Prefer the Windows clipboard (works for files copied in Explorer as well as in J-Dir).
+      let paths: string[] | null = null;
+      let mode: "copy" | "cut" = "copy";
+      try {
+        const osFiles = await apiClipboardGetFiles();
+        if (osFiles && osFiles.paths.length > 0) {
+          paths = osFiles.paths;
+          mode = osFiles.cut ? "cut" : "copy";
+        }
+      } catch {
+        // fall back to the in-app clipboard
+      }
+      if (!paths && clipboard && clipboard.paths.length > 0) {
+        paths = clipboard.paths;
+        mode = clipboard.mode;
+      }
+      if (!paths) {
+        notify("붙여넣을 파일이 클립보드에 없습니다.", true);
+        return;
+      }
       const targetPane = panes[targetPaneIndex];
       const activeTab =
         targetPane.tabs.find((t) => t.id === targetPane.activeTabId) ||
         targetPane.tabs[0];
       const destDir = activeTab.path;
       const ok = await executeTransfer(
-        clipboard.paths,
+        paths,
         destDir,
-        clipboard.mode === "copy" ? "copy" : "move",
+        mode === "copy" ? "copy" : "move",
         `패널 #${targetPaneIndex + 1}(${folderTitleFromPath(destDir)}) 붙여넣기`
       );
-      if (ok && clipboard.mode === "cut") {
+      if (ok && mode === "cut") {
         setClipboard(null);
+        apiClipboardClear().catch(() => {});
       }
     },
-    [clipboard, panes, executeTransfer]
+    [clipboard, panes, executeTransfer, notify]
   );
 
   const handleTransferBetweenPanes = useCallback(
@@ -694,6 +848,43 @@ export const App: React.FC = () => {
       );
     },
     [executeTransfer]
+  );
+
+  const handleZip = useCallback(
+    async (paths: string[], baseDir: string, suggestedName: string) => {
+      const dest = `${baseDir.replace(/[\\/]+$/, "")}\\${suggestedName}.zip`;
+      try {
+        const out = await runJob(`ZIP 압축: ${suggestedName}`, (jobId) =>
+          apiZipItems(paths, dest, jobId)
+        );
+        pushUndo({ label: `ZIP 압축 (${suggestedName})`, kind: "trash", paths: [out] });
+        setRefreshTrigger((t) => t + 1);
+        notify(`압축 완료: ${folderTitleFromPath(out)}`);
+      } catch (err) {
+        const msg = String(err);
+        notify(msg.includes("취소") ? "압축을 취소했습니다." : msg, !msg.includes("취소"));
+        setRefreshTrigger((t) => t + 1);
+      }
+    },
+    [runJob, pushUndo, notify]
+  );
+
+  const handleUnzip = useCallback(
+    async (zipPath: string, destDir: string) => {
+      try {
+        const out = await runJob(`압축 풀기: ${folderTitleFromPath(zipPath)}`, (jobId) =>
+          apiUnzip(zipPath, destDir, jobId)
+        );
+        pushUndo({ label: `압축 풀기 (${folderTitleFromPath(zipPath)})`, kind: "trash", paths: [out] });
+        setRefreshTrigger((t) => t + 1);
+        notify(`압축 풀기 완료: ${folderTitleFromPath(out)}`);
+      } catch (err) {
+        const msg = String(err);
+        notify(msg.includes("취소") ? "압축 풀기를 취소했습니다." : msg, !msg.includes("취소"));
+        setRefreshTrigger((t) => t + 1);
+      }
+    },
+    [runJob, pushUndo, notify]
   );
 
   const performDelete = useCallback(
@@ -873,10 +1064,14 @@ export const App: React.FC = () => {
           handleCopySelectionToClipboard(activeFocus, "cut", activePane.selectedPaths);
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
-        if (clipboard && clipboard.paths.length > 0) {
-          e.preventDefault();
-          handlePasteFromClipboard(activeFocus);
-        }
+        e.preventDefault();
+        handlePasteFromClipboard(activeFocus);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        performUndo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setActiveModal("search");
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "t") {
         e.preventDefault();
         handleAddTab(activeFocus, activeTab?.path);
@@ -919,15 +1114,79 @@ export const App: React.FC = () => {
     visiblePanes,
     activeFocus,
     panes,
-    clipboard,
     notify,
-    handleCopySelectionToClipboard,
+    performUndo,
     handlePasteFromClipboard,
+    handleCopySelectionToClipboard,
     handleAddTab,
     handleDeletePaths,
     handleNavigate,
     handleTransferBetweenPanes,
   ]);
+
+  // Watch the folders shown in visible panes and refresh them when they change on disk.
+  const panesRef = useRef(panes);
+  panesRef.current = panes;
+  const watchKey = useMemo(() => {
+    const set = new Set<string>();
+    panes.forEach((p, i) => {
+      if (layoutMode !== "1-single" && !visiblePanes.includes(i)) return;
+      if (layoutMode === "1-single" && i !== activeFocus) return;
+      const tab = p.tabs.find((t) => t.id === p.activeTabId) || p.tabs[0];
+      if (tab) set.add(tab.path);
+    });
+    return Array.from(set).sort().join("|");
+  }, [panes, layoutMode, visiblePanes, activeFocus]);
+
+  useEffect(() => {
+    apiWatchDirs(watchKey ? watchKey.split("|") : []).catch(() => {});
+  }, [watchKey]);
+
+  useEffect(() => {
+    const norm = (p: string) => p.replace(/[\\/]+$/, "").toLowerCase();
+    const pending = new Set<string>();
+    let timer: number | null = null;
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+
+    onFsChanged((changed) => {
+      pending.add(norm(changed));
+      if (timer !== null) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        const dirs = new Set(pending);
+        pending.clear();
+        setPaneRefresh((prev) =>
+          prev.map((n, i) => {
+            const p = panesRef.current[i];
+            const tab = p?.tabs.find((t) => t.id === p.activeTabId) || p?.tabs[0];
+            return tab && dirs.has(norm(tab.path)) ? n + 1 : n;
+          })
+        );
+      }, 300);
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, []);
+
+  // Network / virtual drives may not emit change events — refresh when the window regains focus.
+  useEffect(() => {
+    let last = 0;
+    const onFocus = () => {
+      const now = Date.now();
+      if (now - last < 1500) return;
+      last = now;
+      setRefreshTrigger((t) => t + 1);
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   // Persist the workspace (debounced) so the next launch restores it.
   useEffect(() => {
@@ -1006,7 +1265,7 @@ export const App: React.FC = () => {
       theme={theme}
       globalTreeMode={treeMode}
       clipboard={clipboard}
-      refreshTrigger={refreshTrigger}
+      refreshTrigger={refreshTrigger + (paneRefresh[paneIndex] ?? 0)}
       transferTargets={visiblePanes.filter((i) => i !== paneIndex)}
       shortcutsEnabled={!dialogOpen}
       onFocusPane={setActiveFocus}
@@ -1022,6 +1281,12 @@ export const App: React.FC = () => {
       onPasteFromClipboard={handlePasteFromClipboard}
       onTransferBetweenPanes={handleTransferBetweenPanes}
       onDropToPath={handleDropToPath}
+      runJob={runJob}
+      onZip={handleZip}
+      onUnzip={handleUnzip}
+      onOpenProperties={setPropsEntries}
+      onOpenSearch={() => setActiveModal("search")}
+      onRecordUndo={pushUndo}
       onDeletePaths={handleDeletePaths}
       onAddQuickLink={handleAddQuickLink}
       onEntriesLoaded={handleEntriesLoaded}
@@ -1390,6 +1655,37 @@ export const App: React.FC = () => {
           onCheckAgain={() => handleCheckUpdates(true)}
           onInstallNow={handleInstallUpdateAndRestart}
           onClose={() => setActiveModal(null)}
+        />
+      )}
+
+      <JobPanel jobs={Object.values(jobs)} onCancel={cancelJob} />
+
+      {activeModal === "search" && (
+        <SearchModal
+          initialRoot={activePaneTab?.path || "C:\\"}
+          onClose={() => setActiveModal(null)}
+          onOpenEntry={(entry) => {
+            if (entry.isDir) {
+              handleNavigate(activeFocus, entry.path, true);
+              setActiveModal(null);
+            } else {
+              apiOpenItem(entry.path).catch((err) => notify(String(err), true));
+            }
+          }}
+          onRevealEntry={(entry) => {
+            const parent = getParentPath(entry.path);
+            if (parent) handleNavigate(activeFocus, parent, true);
+            setActiveModal(null);
+          }}
+        />
+      )}
+
+      {propsEntries && (
+        <PropertiesModal
+          entries={propsEntries}
+          onChanged={() => setRefreshTrigger((t) => t + 1)}
+          onNotify={notify}
+          onClose={() => setPropsEntries(null)}
         />
       )}
 

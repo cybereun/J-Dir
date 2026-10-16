@@ -47,6 +47,8 @@ pub struct FolderSizeStats {
     pub total_bytes: u64,
     pub file_count: u64,
     pub dir_count: u64,
+    #[serde(default)]
+    pub cancelled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -106,6 +108,18 @@ pub struct FileActionReport {
     pub failed: Vec<FileActionError>,
     #[serde(default)]
     pub skipped: Vec<String>,
+    /// (from, to) for every moved/copied item — used for undo.
+    #[serde(default)]
+    pub pairs: Vec<PathPair>,
+    #[serde(default)]
+    pub cancelled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PathPair {
+    pub from: String,
+    pub to: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

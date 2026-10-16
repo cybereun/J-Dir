@@ -1,3 +1,4 @@
+use crate::jobs::Reporter;
 use crate::models::{DriveInfo, FileEntry, FolderSizeStats, SpecialPaths};
 use std::env;
 use std::fs;
@@ -251,7 +252,7 @@ pub fn get_special_paths() -> Result<SpecialPaths, String> {
     })
 }
 
-pub fn calculate_folder_size(path: String) -> Result<FolderSizeStats, String> {
+pub fn calculate_folder_size(path: String, rep: &Reporter) -> Result<FolderSizeStats, String> {
     let root = normalize_windows_path(&path);
     if !root.exists() {
         return Err(format!("경로를 찾을 수 없습니다: {}", root.display()));
@@ -261,9 +262,20 @@ pub fn calculate_folder_size(path: String) -> Result<FolderSizeStats, String> {
     let mut file_count = 0u64;
     let mut dir_count = 0u64;
 
+    let mut cancelled = false;
+    let mut seen = 0u64;
     for entry in WalkDir::new(&root).max_depth(32).into_iter().flatten() {
         if entry.path() == root {
             continue;
+        }
+        seen += 1;
+        if seen % 500 == 0 {
+            if rep.is_cancelled() {
+                cancelled = true;
+                break;
+            }
+            let cur = entry.path().parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+            rep.set_progress(total_bytes, file_count, &cur);
         }
         if let Ok(meta) = entry.metadata() {
             if meta.is_dir() {
@@ -280,6 +292,7 @@ pub fn calculate_folder_size(path: String) -> Result<FolderSizeStats, String> {
         total_bytes,
         file_count,
         dir_count,
+        cancelled,
     })
 }
 
@@ -306,7 +319,7 @@ mod tests {
         assert_eq!(entries[1].name, "alpha.txt");
         assert_eq!(entries[1].size, 11);
 
-        let stats = calculate_folder_size(dir.path().to_string_lossy().to_string()).unwrap();
+        let stats = calculate_folder_size(dir.path().to_string_lossy().to_string(), &Reporter::noop()).unwrap();
         assert_eq!(stats.file_count, 2);
         assert_eq!(stats.dir_count, 1);
         assert_eq!(stats.total_bytes, 21);

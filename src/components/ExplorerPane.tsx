@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Archive,
+  Info,
+  PackageOpen,
+  Search,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -33,6 +37,7 @@ import {
   FileEntry,
   PaneState,
   QuickLinkItem,
+  UndoOp,
   SortField,
   ViewMode,
 } from "../types/jdir";
@@ -105,6 +110,12 @@ interface ExplorerPaneProps {
     mode: "copy" | "move"
   ) => void;
   onDropToPath: (destDir: string, paths: string[], mode: "copy" | "move") => void;
+  runJob: <T>(label: string, fn: (jobId: string) => Promise<T>) => Promise<T>;
+  onZip: (paths: string[], baseDir: string, suggestedName: string) => void;
+  onUnzip: (zipPath: string, destDir: string) => void;
+  onOpenProperties: (entries: FileEntry[]) => void;
+  onOpenSearch: () => void;
+  onRecordUndo: (op: UndoOp) => void;
   onDeletePaths: (paneIndex: number, paths: string[], permanent: boolean) => void;
   onAddQuickLink: (name: string, targetPath: string) => void;
   onEntriesLoaded?: (paneIndex: number, entries: FileEntry[]) => void;
@@ -142,6 +153,12 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   onPasteFromClipboard,
   onTransferBetweenPanes,
   onDropToPath,
+  runJob,
+  onZip,
+  onUnzip,
+  onOpenProperties,
+  onOpenSearch,
+  onRecordUndo,
   onDeletePaths,
   onAddQuickLink,
   onEntriesLoaded,
@@ -375,7 +392,12 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
     if (!newName || newName === originalName) return;
 
     try {
-      await apiRenameItem(targetPath, newName);
+      const newPath = await apiRenameItem(targetPath, newName);
+      onRecordUndo({
+        label: `이름 변경 (${originalName ?? newName} → ${newName})`,
+        kind: "move-back",
+        pairs: [{ from: targetPath, to: newPath }],
+      });
       onNotify(`이름 변경 완료: ${newName}`);
       loadDir();
     } catch (err) {
@@ -393,10 +415,12 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
     }
     try {
       if (creatingMode === "folder") {
-        await apiCreateDirectory(currentPath, name);
+        const created = await apiCreateDirectory(currentPath, name);
+        onRecordUndo({ label: `새 폴더 (${name})`, kind: "trash", paths: [created] });
         onNotify(`새 폴더 생성 완료: ${name}`);
       } else {
-        await apiCreateTextFile(currentPath, name, "");
+        const created = await apiCreateTextFile(currentPath, name, "");
+        onRecordUndo({ label: `새 파일 (${name})`, kind: "trash", paths: [created] });
         onNotify(`새 파일 생성 완료: ${name}`);
       }
       setCreatingMode(null);
@@ -418,18 +442,19 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
       return;
     }
 
-    onNotify(`${targetDirs.length}개 폴더 용량 계산 중...`);
     const nextSizes = { ...pane.folderSizes };
-    for (const dir of targetDirs) {
-      try {
-        const stats = await apiCalculateFolderSize(dir.path);
-        nextSizes[dir.path] = stats.totalBytes;
-      } catch {
-        // Ignore inaccessible system folder
+    await runJob(`폴더 용량 계산 (${targetDirs.length}개)`, async (jobId) => {
+      for (const dir of targetDirs) {
+        try {
+          const stats = await apiCalculateFolderSize(dir.path, jobId);
+          if (stats.cancelled) break;
+          nextSizes[dir.path] = stats.totalBytes;
+        } catch {
+          // Ignore inaccessible system folder
+        }
       }
-    }
+    });
     onUpdatePane(pane.index, { folderSizes: nextSizes });
-    onNotify("폴더 크기 계산이 완료되었습니다.");
   };
 
   // Drag & Drop handlers between panes
@@ -509,7 +534,10 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
       if (renamingRef.current) return;
 
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        if (e.key === "ArrowLeft") {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          if (selectedEntries.length > 0) onOpenProperties(selectedEntries);
+        } else if (e.key === "ArrowLeft") {
           e.preventDefault();
           if (activeTab && activeTab.historyIndex > 0) onHistoryBack(pane.index);
         } else if (e.key === "ArrowRight") {
@@ -711,6 +739,14 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
             title="새 텍스트 파일 만들기"
           >
             <FilePlus size={13} />
+          </button>
+          <button
+            type="button"
+            className="pane-tool-btn"
+            onClick={onOpenSearch}
+            title="파일 검색 (Ctrl+F)"
+          >
+            <Search size={13} />
           </button>
           <button
             type="button"
@@ -1437,19 +1473,20 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
             </>
           )}
 
-          {clipboard && clipboard.paths.length > 0 && (
-            <button
-              type="button"
-              className="ctx-item"
-              onClick={() => {
-                onPasteFromClipboard(pane.index);
-                setContextMenu(null);
-              }}
-            >
-              <Clipboard size={13} />
-              <span>여기에 붙여넣기 ({clipboard.paths.length}개)</span>
-            </button>
-          )}
+          <button
+            type="button"
+            className="ctx-item"
+            onClick={() => {
+              onPasteFromClipboard(pane.index);
+              setContextMenu(null);
+            }}
+          >
+            <Clipboard size={13} />
+            <span>
+              여기에 붙여넣기 (Ctrl+V)
+              {clipboard && clipboard.paths.length > 0 ? ` · ${clipboard.paths.length}개` : ""}
+            </span>
+          </button>
 
           <div className="ctx-divider" />
           <button
@@ -1497,6 +1534,98 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
             <Terminal size={13} />
             <span>여기서 PowerShell 열기</span>
           </button>
+
+          <div className="ctx-divider" />
+          <button
+            type="button"
+            className="ctx-item"
+            onClick={() => {
+              onOpenSearch();
+              setContextMenu(null);
+            }}
+          >
+            <Search size={13} />
+            <span>파일 검색 (Ctrl+F)</span>
+          </button>
+          {selectedEntries.length > 0 && (
+            <>
+              <button
+                type="button"
+                className="ctx-item"
+                onClick={() => {
+                  navigator.clipboard
+                    .writeText(selectedEntries.map((e) => e.path).join("\r\n"))
+                    .then(() => onNotify("경로를 복사했습니다."))
+                    .catch(() => onNotify("클립보드에 복사하지 못했습니다.", true));
+                  setContextMenu(null);
+                }}
+              >
+                <Copy size={13} />
+                <span>경로 복사</span>
+              </button>
+              <button
+                type="button"
+                className="ctx-item"
+                onClick={() => {
+                  navigator.clipboard
+                    .writeText(selectedEntries.map((e) => e.name).join("\r\n"))
+                    .then(() => onNotify("이름을 복사했습니다."))
+                    .catch(() => onNotify("클립보드에 복사하지 못했습니다.", true));
+                  setContextMenu(null);
+                }}
+              >
+                <Copy size={13} />
+                <span>이름 복사</span>
+              </button>
+              <button
+                type="button"
+                className="ctx-item"
+                onClick={() => {
+                  const single = selectedEntries.length === 1 ? selectedEntries[0] : null;
+                  const suggested = single
+                    ? single.isDir
+                      ? single.name
+                      : single.name.replace(/\.[^.]+$/, "")
+                    : currentPath.split(/[\\/]/).filter(Boolean).pop() || "압축";
+                  onZip(
+                    selectedEntries.map((e) => e.path),
+                    currentPath,
+                    suggested
+                  );
+                  setContextMenu(null);
+                }}
+              >
+                <Archive size={13} />
+                <span>ZIP으로 압축</span>
+              </button>
+              {selectedEntries.length === 1 &&
+                !selectedEntries[0].isDir &&
+                selectedEntries[0].extension.toLowerCase() === "zip" && (
+                  <button
+                    type="button"
+                    className="ctx-item"
+                    onClick={() => {
+                      onUnzip(selectedEntries[0].path, currentPath);
+                      setContextMenu(null);
+                    }}
+                  >
+                    <PackageOpen size={13} />
+                    <span>여기에 압축 풀기</span>
+                  </button>
+                )}
+              <button
+                type="button"
+                className="ctx-item"
+                onClick={() => {
+                  onOpenProperties(selectedEntries);
+                  setContextMenu(null);
+                }}
+              >
+                <Info size={13} />
+                <span>속성 (Alt+Enter)</span>
+              </button>
+            </>
+          )}
 
           {pane.selectedPaths.length > 0 && (
             <>

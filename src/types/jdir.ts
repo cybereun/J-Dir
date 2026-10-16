@@ -37,6 +37,7 @@ export interface FolderSizeStats {
   totalBytes: number;
   fileCount: number;
   dirCount: number;
+  cancelled?: boolean;
 }
 
 export interface ColorFilterRule {
@@ -88,11 +89,65 @@ export interface FileActionError {
   error: string;
 }
 
+export interface PathPair {
+  from: string;
+  to: string;
+}
+
 export interface FileActionReport {
   succeeded: string[];
   failed: FileActionError[];
   skipped?: string[];
+  pairs?: PathPair[];
+  cancelled?: boolean;
 }
+
+export interface JobProgressEvent {
+  jobId: string;
+  doneBytes: number;
+  totalBytes: number;
+  doneItems: number;
+  totalItems: number;
+  current: string;
+}
+
+export interface JobState {
+  id: string;
+  label: string;
+  doneBytes: number;
+  totalBytes: number;
+  doneItems: number;
+  totalItems: number;
+  current: string;
+  cancelling: boolean;
+}
+
+export interface SearchQuery {
+  pattern: string;
+  includeDirs: boolean;
+  includeHidden: boolean;
+  minSize?: number;
+  maxSize?: number;
+  modifiedAfterMs?: number;
+  modifiedBeforeMs?: number;
+}
+
+export interface SearchResult {
+  entries: FileEntry[];
+  truncated: boolean;
+  cancelled: boolean;
+  scanned: number;
+}
+
+export interface ClipboardFiles {
+  paths: string[];
+  cut: boolean;
+}
+
+/** Reversible operation recorded for Ctrl+Z */
+export type UndoOp =
+  | { label: string; kind: "move-back"; pairs: PathPair[] }
+  | { label: string; kind: "trash"; paths: string[] };
 
 export type ConflictPolicy = "rename" | "overwrite" | "skip";
 

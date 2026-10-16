@@ -1,14 +1,48 @@
+pub mod archive;
+pub mod clipboard;
 pub mod file_actions;
 pub mod fs_ops;
+pub mod jobs;
 pub mod models;
 pub mod preview;
 pub mod qdir_compat;
+pub mod search;
 pub mod updater;
 
+use jobs::Reporter;
 use models::{
-    DriveInfo, FileActionReport, FileEntry, FilePreviewData, FolderSizeStats, QDirWorkspaceConfig,
-    SpecialPaths, UpdateCheckResult,
+    DriveInfo, FileActionReport, FileEntry, FilePreviewData, FolderSizeStats, PathPair,
+    QDirWorkspaceConfig, SpecialPaths, UpdateCheckResult,
 };
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, Manager, State};
+
+fn job_reporter(app: &AppHandle, job_id: String) -> Reporter {
+    let app = app.clone();
+    Reporter::new(
+        job_id,
+        Box::new(move |ev| {
+            let _ = app.emit("jdir://progress", ev);
+        }),
+    )
+}
+
+fn main_hwnd(app: &AppHandle) -> isize {
+    #[cfg(windows)]
+    {
+        if let Some(w) = app.get_webview_window("main") {
+            if let Ok(h) = w.hwnd() {
+                return h.0 as isize;
+            }
+        }
+    }
+    let _ = app;
+    0
+}
+
+/// Keeps the active directory watcher alive (replaced whenever the watched set changes).
+#[derive(Default)]
+struct WatchState(Mutex<Option<notify::RecommendedWatcher>>);
 
 #[tauri::command(async)]
 fn cmd_list_directory(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
@@ -31,26 +65,44 @@ fn cmd_get_special_paths() -> Result<SpecialPaths, String> {
 }
 
 #[tauri::command(async)]
-fn cmd_calculate_folder_size(path: String) -> Result<FolderSizeStats, String> {
-    fs_ops::calculate_folder_size(path)
+fn cmd_calculate_folder_size(
+    app: AppHandle,
+    path: String,
+    job_id: String,
+) -> Result<FolderSizeStats, String> {
+    fs_ops::calculate_folder_size(path, &job_reporter(&app, job_id))
+}
+
+#[tauri::command(async)]
+fn cmd_cancel_job(job_id: String) {
+    jobs::cancel_job(&job_id);
+}
+
+#[tauri::command(async)]
+fn cmd_job_done(job_id: String) {
+    jobs::finish_job(&job_id);
 }
 
 #[tauri::command(async)]
 fn cmd_copy_items(
+    app: AppHandle,
     sources: Vec<String>,
     destination_dir: String,
     policy: String,
+    job_id: String,
 ) -> Result<FileActionReport, String> {
-    file_actions::copy_items(sources, destination_dir, policy)
+    file_actions::copy_items(sources, destination_dir, policy, &job_reporter(&app, job_id))
 }
 
 #[tauri::command(async)]
 fn cmd_move_items(
+    app: AppHandle,
     sources: Vec<String>,
     destination_dir: String,
     policy: String,
+    job_id: String,
 ) -> Result<FileActionReport, String> {
-    file_actions::move_items(sources, destination_dir, policy)
+    file_actions::move_items(sources, destination_dir, policy, &job_reporter(&app, job_id))
 }
 
 #[tauri::command(async)]
@@ -132,9 +184,105 @@ fn cmd_install_update_and_restart(
     updater::install_update_and_restart(download_url, asset_name)
 }
 
+#[tauri::command(async)]
+fn cmd_restore_moves(pairs: Vec<PathPair>) -> Result<FileActionReport, String> {
+    file_actions::restore_moves(pairs)
+}
+
+#[tauri::command(async)]
+fn cmd_set_attributes(
+    paths: Vec<String>,
+    readonly: Option<bool>,
+    hidden: Option<bool>,
+) -> Result<FileActionReport, String> {
+    file_actions::set_attributes(paths, readonly, hidden)
+}
+
+#[tauri::command(async)]
+fn cmd_search_files(
+    app: AppHandle,
+    root: String,
+    query: search::SearchQuery,
+    job_id: String,
+) -> Result<search::SearchResult, String> {
+    search::search_files(root, query, &job_reporter(&app, job_id))
+}
+
+#[tauri::command(async)]
+fn cmd_zip_items(
+    app: AppHandle,
+    sources: Vec<String>,
+    dest_zip: String,
+    job_id: String,
+) -> Result<String, String> {
+    archive::zip_items(sources, dest_zip, &job_reporter(&app, job_id))
+}
+
+#[tauri::command(async)]
+fn cmd_unzip(
+    app: AppHandle,
+    zip_path: String,
+    dest_dir: String,
+    job_id: String,
+) -> Result<String, String> {
+    archive::unzip_archive(zip_path, dest_dir, &job_reporter(&app, job_id))
+}
+
+#[tauri::command(async)]
+fn cmd_clipboard_set_files(app: AppHandle, paths: Vec<String>, cut: bool) -> Result<(), String> {
+    clipboard::set_files(main_hwnd(&app), &paths, cut)
+}
+
+#[tauri::command(async)]
+fn cmd_clipboard_get_files(app: AppHandle) -> Result<Option<clipboard::ClipboardFiles>, String> {
+    clipboard::get_files(main_hwnd(&app))
+}
+
+#[tauri::command(async)]
+fn cmd_clipboard_clear(app: AppHandle) -> Result<(), String> {
+    clipboard::clear(main_hwnd(&app))
+}
+
+/// Replaces the set of watched directories; changes are reported via `jdir://fs-changed`.
+#[tauri::command(async)]
+fn cmd_watch_dirs(
+    app: AppHandle,
+    state: State<WatchState>,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    use notify::{EventKind, RecursiveMode, Watcher};
+
+    let emit_app = app.clone();
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(event) = res else { return };
+        if matches!(event.kind, EventKind::Access(_)) {
+            return;
+        }
+        for p in &event.paths {
+            if let Some(parent) = p.parent() {
+                let _ = emit_app.emit("jdir://fs-changed", parent.to_string_lossy().to_string());
+            }
+            // the watched folder itself (e.g. deleted / renamed) is reported by its own path
+            let _ = emit_app.emit("jdir://fs-changed", p.to_string_lossy().to_string());
+        }
+    })
+    .map_err(|e| format!("폴더 감시 시작 실패: {}", e))?;
+
+    for p in paths {
+        let path = fs_ops::normalize_windows_path(&p);
+        if path.is_dir() {
+            // unreachable / network folders simply stay unwatched (focus refresh covers them)
+            let _ = watcher.watch(&path, RecursiveMode::NonRecursive);
+        }
+    }
+    *state.0.lock().map_err(|_| "감시 상태 잠금 실패".to_string())? = Some(watcher);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(WatchState::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             cmd_list_directory,
@@ -144,6 +292,17 @@ pub fn run() {
             cmd_calculate_folder_size,
             cmd_copy_items,
             cmd_move_items,
+            cmd_cancel_job,
+            cmd_job_done,
+            cmd_restore_moves,
+            cmd_set_attributes,
+            cmd_search_files,
+            cmd_zip_items,
+            cmd_unzip,
+            cmd_clipboard_set_files,
+            cmd_clipboard_get_files,
+            cmd_clipboard_clear,
+            cmd_watch_dirs,
             cmd_check_conflicts,
             cmd_delete_items,
             cmd_rename_item,

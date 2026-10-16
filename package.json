@@ -1,0 +1,28 @@
+{
+  "name": "j-dir",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite -c C:/Users/cybereun/AppData/Local/J-Dir-Cache/vite.config.mjs",
+    "build": "tsc -b && vite build -c C:/Users/cybereun/AppData/Local/J-Dir-Cache/vite.config.mjs",
+    "test": "vitest run -c C:/Users/cybereun/AppData/Local/J-Dir-Cache/vite.config.mjs",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.4.1",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.1.0"
+  }
+}

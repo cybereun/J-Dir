@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "C:/Users/cybereun/AppData/Local/J-Dir-Cache/tsconfig.node.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "baseUrl": ".",
+    "typeRoots": ["C:/Users/cybereun/AppData/Local/J-Dir-Cache/node_modules/@types"],
+    "paths": {
+      "*": ["C:/Users/cybereun/AppData/Local/J-Dir-Cache/node_modules/*"]
+    }
+  },
+  "include": ["vite.config.ts"]
+}

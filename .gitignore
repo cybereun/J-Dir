@@ -1,0 +1,17 @@
+# Dependencies & Build Artifacts
+node_modules/
+dist/
+dist-ssr/
+src-tauri/target/
+target/
+*.local
+
+# Executables & Installers in project root
+*.exe
+*.msi
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

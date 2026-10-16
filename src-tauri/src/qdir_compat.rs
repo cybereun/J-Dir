@@ -337,25 +337,32 @@ pub fn find_default_qdir_portable_dir() -> Option<PathBuf> {
 
 pub fn import_qdir_directory(qdir_dir_path: Option<String>) -> Result<QDirWorkspaceConfig, String> {
     let target_dir = match qdir_dir_path {
-        Some(p) if !p.trim().is_empty() => PathBuf::from(p.trim()),
-        _ => find_default_qdir_portable_dir()
-            .ok_or_else(|| "기본 Q-Dir 폴더를 찾을 수 없습니다.".to_string())?,
+        Some(p) if !p.trim().is_empty() => Some(PathBuf::from(p.trim())),
+        _ => find_default_qdir_portable_dir(),
     };
 
-    let ini_path = if target_dir.is_file() && target_dir.extension().is_some_and(|e| e == "ini") {
-        target_dir.clone()
-    } else {
-        target_dir.join("Q-Dir.ini")
+    // Without a Q-Dir installation we fall back to built-in defaults instead of failing.
+    let (ini_path, folder_root) = match &target_dir {
+        Some(dir) => {
+            let ini = if dir.is_file() && dir.extension().is_some_and(|e| e == "ini") {
+                dir.clone()
+            } else {
+                dir.join("Q-Dir.ini")
+            };
+            let root = ini.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| dir.clone());
+            (ini, root)
+        }
+        None => (PathBuf::new(), PathBuf::new()),
     };
-
-    let folder_root = ini_path
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| target_dir.clone());
     let qdr_path = folder_root.join("start.qdr");
+    let source_label = if target_dir.is_some() {
+        folder_root.to_string_lossy().to_string()
+    } else {
+        "J-Dir 기본값".to_string()
+    };
 
     let mut config = QDirWorkspaceConfig {
-        source_dir: folder_root.to_string_lossy().to_string(),
+        source_dir: source_label,
         layout_mode: 5,
         use_color_start: true,
         design_mode: 1,
@@ -442,7 +449,7 @@ pub fn import_qdir_directory(qdir_dir_path: Option<String>) -> Result<QDirWorksp
         }
     }
 
-    if qdr_path.exists() {
+    if target_dir.is_some() && qdr_path.exists() {
         let qdr_text = read_text_auto_encoding(&qdr_path)?;
         for raw_line in qdr_text.lines() {
             let line = raw_line.trim();

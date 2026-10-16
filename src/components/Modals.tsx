@@ -620,7 +620,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
             <div className="update-brand-meta">
               <h4>J-Dir — The Quad Explorer</h4>
               <p>
-                현재 버전: <strong>v{updateInfo?.currentVersion || "1.0.0"}</strong>
+                현재 버전: <strong>v{updateInfo?.currentVersion || "1.0.1"}</strong>
                 {updateInfo?.latestVersion && (
                   <>
                     {" "}
@@ -668,7 +668,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               <div className="update-avail-header">
                 <span className="update-new-badge">NEW RELEASE</span>
                 <strong>
-                  {updateInfo.releaseTitle || `J-Dir v${updateInfo.latestVersion}`} 업데이트가 준비되었습니다!
+                  {updateInfo.releaseName || `J-Dir v${updateInfo.latestVersion}`} 업데이트가 준비되었습니다!
                 </strong>
               </div>
 
@@ -714,3 +714,135 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   );
 };
 
+
+interface ConfirmDeleteDialogProps {
+  paths: string[];
+  permanent: boolean;
+  onConfirm: (dontAskAgain: boolean) => void;
+  onCancel: () => void;
+}
+
+export const ConfirmDeleteDialog: React.FC<ConfirmDeleteDialogProps> = ({
+  paths,
+  permanent,
+  onConfirm,
+  onCancel,
+}) => {
+  const [dontAsk, setDontAsk] = useState(false);
+  const firstName = paths[0]?.split(/[\/]/).filter(Boolean).pop() ?? "";
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onConfirm(dontAsk);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dontAsk, onConfirm, onCancel]);
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal-dialog modal-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">
+            <Trash2 size={16} />
+            <span>{permanent ? "영구 삭제 확인" : "삭제 확인"}</span>
+          </div>
+        </div>
+        <div className="modal-body confirm-dialog-body">
+          <p>
+            {paths.length === 1 ? `"${firstName}"` : `선택한 ${paths.length}개 항목`}
+            {permanent
+              ? " 을(를) 영구 삭제합니다. 이 작업은 되돌릴 수 없습니다."
+              : " 을(를) 휴지통으로 이동합니다."}
+          </p>
+          {!permanent && (
+            <label className="confirm-check">
+              <input
+                type="checkbox"
+                checked={dontAsk}
+                onChange={(e) => setDontAsk(e.target.checked)}
+              />
+              <span>휴지통 삭제는 다시 묻지 않기</span>
+            </label>
+          )}
+          <div className="confirm-actions">
+            <button type="button" className="secondary-btn" onClick={onCancel}>
+              취소 (Esc)
+            </button>
+            <button
+              type="button"
+              className={permanent ? "primary-btn danger-btn" : "primary-btn"}
+              onClick={() => onConfirm(dontAsk)}
+              autoFocus
+            >
+              {permanent ? "영구 삭제 (Enter)" : "삭제 (Enter)"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface ConflictDialogProps {
+  names: string[];
+  mode: "copy" | "move";
+  onChoose: (policy: "overwrite" | "rename" | "skip" | null) => void;
+}
+
+export const ConflictDialog: React.FC<ConflictDialogProps> = ({ names, mode, onChoose }) => {
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onChoose(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onChoose]);
+
+  return (
+    <div className="modal-backdrop" onClick={() => onChoose(null)}>
+      <div className="modal-dialog modal-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">
+            <Copy size={16} />
+            <span>같은 이름의 항목이 있습니다</span>
+          </div>
+        </div>
+        <div className="modal-body confirm-dialog-body">
+          <p>
+            대상 폴더에 같은 이름이 {names.length}개 있습니다 ({mode === "copy" ? "복사" : "이동"}).
+          </p>
+          <ul className="conflict-name-list">
+            {names.slice(0, 6).map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+            {names.length > 6 && <li>… 외 {names.length - 6}개</li>}
+          </ul>
+          <div className="confirm-actions conflict-actions">
+            <button type="button" className="primary-btn danger-btn" onClick={() => onChoose("overwrite")}>
+              덮어쓰기
+            </button>
+            <button type="button" className="primary-btn" onClick={() => onChoose("rename")} autoFocus>
+              둘 다 유지
+            </button>
+            <button type="button" className="secondary-btn" onClick={() => onChoose("skip")}>
+              건너뛰기
+            </button>
+            <button type="button" className="secondary-btn" onClick={() => onChoose(null)}>
+              취소
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -91,7 +91,10 @@ export interface FileActionError {
 export interface FileActionReport {
   succeeded: string[];
   failed: FileActionError[];
+  skipped?: string[];
 }
+
+export type ConflictPolicy = "rename" | "overwrite" | "skip";
 
 export interface FilePreviewData {
   path: string;
@@ -171,7 +174,7 @@ export interface UpdateCheckResult {
   updateAvailable: boolean;
   currentVersion: string;
   latestVersion: string;
-  releaseTitle: string;
+  releaseName: string;
   releaseNotes: string;
   publishedAt: string;
   downloadUrl: string;

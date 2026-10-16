@@ -32,7 +32,7 @@ export const GlobalFooter: React.FC<GlobalFooterProps> = ({
     if (mPath && mPath[1]) {
       return mPath[1];
     }
-    return "cybereun";
+    return "사용자";
   }, [quickLinks, activePath]);
 
   const currentDrive = useMemo(() => {

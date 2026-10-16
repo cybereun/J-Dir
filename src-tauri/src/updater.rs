@@ -10,6 +10,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 const GITHUB_LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/cybereun/J-Dir/releases/latest";
+const GITHUB_DOWNLOAD_PREFIX: &str = "https://github.com/cybereun/J-Dir/releases/download/";
 const GITHUB_RELEASES_HTML_URL: &str = "https://github.com/cybereun/J-Dir/releases";
 
 fn parse_semver(ver: &str) -> (u32, u32, u32) {
@@ -149,7 +150,7 @@ pub fn install_update_and_restart(
     download_url: String,
     asset_name: String,
 ) -> Result<String, String> {
-    if !download_url.starts_with("https://") {
+    if !download_url.starts_with(GITHUB_DOWNLOAD_PREFIX) {
         return Err("유효하지 않은 다운로드 URL입니다.".to_string());
     }
 

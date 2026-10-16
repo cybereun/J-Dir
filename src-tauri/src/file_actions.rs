@@ -30,61 +30,160 @@ fn resolve_collision_path(dest_dir: &Path, file_name: &str, overwrite: bool) -> 
     candidate
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+fn is_reparse_point(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        fs::symlink_metadata(path)
+            .map(|m| m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        fs::symlink_metadata(path)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+    }
+}
+
+fn path_key(p: &Path) -> String {
+    p.to_string_lossy()
+        .trim_end_matches(['\\', '/'])
+        .to_lowercase()
+}
+
+fn is_same_dir(a: &Path, b: &Path) -> bool {
+    path_key(a) == path_key(b)
+}
+
+fn is_inside(child: &Path, parent: &Path) -> bool {
+    path_key(child).starts_with(&format!("{}\\", path_key(parent)))
+}
+
+fn item_in_dir(src: &Path, dest: &Path) -> bool {
+    src.parent().is_some_and(|p| is_same_dir(p, dest))
+}
+
+fn exists_any(p: &Path) -> bool {
+    fs::symlink_metadata(p).is_ok()
+}
+
+/// Copies a directory tree. Junctions/symlinked folders are skipped (to avoid infinite
+/// recursion); returns the number of skipped links.
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<u32, String> {
     if !dst.exists() {
         fs::create_dir_all(dst).map_err(|e| format!("폴더 생성 실패 ({}): {}", dst.display(), e))?;
     }
+    let mut skipped = 0u32;
     let entries = fs::read_dir(src).map_err(|e| format!("폴더 읽기 실패 ({}): {}", src.display(), e))?;
     for item in entries.flatten() {
         let item_path = item.path();
         let target_path = dst.join(item.file_name());
         if item_path.is_dir() {
-            copy_dir_recursive(&item_path, &target_path)?;
+            if is_reparse_point(&item_path) {
+                skipped += 1;
+                continue;
+            }
+            skipped += copy_dir_recursive(&item_path, &target_path)?;
         } else {
             fs::copy(&item_path, &target_path)
                 .map_err(|e| format!("파일 복사 실패 ({}): {}", item_path.display(), e))?;
         }
     }
-    Ok(())
+    Ok(skipped)
+}
+
+/// Returns names of sources that would collide with an existing item in `destination_dir`.
+/// Items already located in the destination are not conflicts (copy auto-renames, move is a no-op).
+pub fn check_conflicts(sources: Vec<String>, destination_dir: String) -> Result<Vec<String>, String> {
+    let dest = normalize_windows_path(&destination_dir);
+    if !dest.is_dir() {
+        return Err(format!("대상 폴더가 존재하지 않습니다: {}", dest.display()));
+    }
+    let mut out = Vec::new();
+    for src_str in sources {
+        let src = PathBuf::from(&src_str);
+        if item_in_dir(&src, &dest) {
+            continue;
+        }
+        if let Some(name) = src.file_name() {
+            if exists_any(&dest.join(name)) {
+                out.push(name.to_string_lossy().to_string());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// policy: "rename" (keep both), "overwrite", "skip". Returns Ok(None) when the item is skipped.
+fn resolve_target(src: &Path, dest: &Path, file_name: &str, policy: &str) -> Result<Option<PathBuf>, String> {
+    if item_in_dir(src, dest) {
+        return Ok(Some(resolve_collision_path(dest, file_name, false)));
+    }
+    let candidate = dest.join(file_name);
+    if !exists_any(&candidate) {
+        return Ok(Some(candidate));
+    }
+    match policy {
+        "skip" => Ok(None),
+        "overwrite" => {
+            if candidate.is_dir() != src.is_dir() {
+                Err("폴더와 파일 형식이 달라 덮어쓸 수 없습니다.".to_string())
+            } else {
+                Ok(Some(candidate))
+            }
+        }
+        _ => Ok(Some(resolve_collision_path(dest, file_name, false))),
+    }
 }
 
 pub fn copy_items(
     sources: Vec<String>,
     destination_dir: String,
-    overwrite: bool,
+    policy: String,
 ) -> Result<FileActionReport, String> {
     let dest = normalize_windows_path(&destination_dir);
     if !dest.exists() || !dest.is_dir() {
         return Err(format!("대상 폴더가 존재하지 않습니다: {}", dest.display()));
     }
 
-    let mut succeeded = Vec::new();
-    let mut failed = Vec::new();
+    let mut report = FileActionReport::default();
 
     for src_str in sources {
         let src = PathBuf::from(&src_str);
         if !src.exists() {
-            failed.push(FileActionError {
+            report.failed.push(FileActionError {
                 path: src_str,
                 error: "원본 항목이 존재하지 않습니다.".to_string(),
             });
             continue;
         }
         let Some(name_os) = src.file_name() else {
-            failed.push(FileActionError {
+            report.failed.push(FileActionError {
                 path: src_str,
                 error: "유효하지 않은 파일 이름입니다.".to_string(),
             });
             continue;
         };
         let file_name = name_os.to_string_lossy().to_string();
-        let target = resolve_collision_path(&dest, &file_name, overwrite);
+        let target = match resolve_target(&src, &dest, &file_name, &policy) {
+            Ok(Some(t)) => t,
+            Ok(None) => {
+                report.skipped.push(src_str);
+                continue;
+            }
+            Err(err) => {
+                report.failed.push(FileActionError { path: src_str, error: err });
+                continue;
+            }
+        };
 
         let res = if src.is_dir() {
-            if target.starts_with(&src) && target != src {
+            if is_same_dir(&target, &src) || is_inside(&target, &src) {
                 Err("상위 폴더를 자기 자신의 하위 폴더로 복사할 수 없습니다.".to_string())
             } else {
-                copy_dir_recursive(&src, &target)
+                copy_dir_recursive(&src, &target).map(|_| ())
             }
         } else {
             fs::copy(&src, &target)
@@ -93,56 +192,65 @@ pub fn copy_items(
         };
 
         match res {
-            Ok(()) => succeeded.push(target.to_string_lossy().to_string()),
-            Err(err) => failed.push(FileActionError {
+            Ok(()) => report.succeeded.push(target.to_string_lossy().to_string()),
+            Err(err) => report.failed.push(FileActionError {
                 path: src_str,
                 error: err,
             }),
         }
     }
 
-    Ok(FileActionReport { succeeded, failed })
+    Ok(report)
 }
 
 pub fn move_items(
     sources: Vec<String>,
     destination_dir: String,
-    overwrite: bool,
+    policy: String,
 ) -> Result<FileActionReport, String> {
     let dest = normalize_windows_path(&destination_dir);
     if !dest.exists() || !dest.is_dir() {
         return Err(format!("대상 폴더가 존재하지 않습니다: {}", dest.display()));
     }
 
-    let mut succeeded = Vec::new();
-    let mut failed = Vec::new();
+    let mut report = FileActionReport::default();
 
     for src_str in sources {
         let src = PathBuf::from(&src_str);
         if !src.exists() {
-            failed.push(FileActionError {
+            report.failed.push(FileActionError {
                 path: src_str,
                 error: "원본 항목이 존재하지 않습니다.".to_string(),
             });
             continue;
         }
         let Some(name_os) = src.file_name() else {
-            failed.push(FileActionError {
+            report.failed.push(FileActionError {
                 path: src_str,
                 error: "유효하지 않은 파일 이름입니다.".to_string(),
             });
             continue;
         };
-        let file_name = name_os.to_string_lossy().to_string();
-        let target = resolve_collision_path(&dest, &file_name, overwrite);
-
-        if src == target {
-            succeeded.push(target.to_string_lossy().to_string());
+        // Moving an item into the folder it already lives in is a no-op.
+        if item_in_dir(&src, &dest) {
+            report.skipped.push(src_str);
             continue;
         }
+        let file_name = name_os.to_string_lossy().to_string();
+        let target = match resolve_target(&src, &dest, &file_name, &policy) {
+            Ok(Some(t)) => t,
+            Ok(None) => {
+                report.skipped.push(src_str);
+                continue;
+            }
+            Err(err) => {
+                report.failed.push(FileActionError { path: src_str, error: err });
+                continue;
+            }
+        };
 
-        if src.is_dir() && target.starts_with(&src) {
-            failed.push(FileActionError {
+        if src.is_dir() && (is_same_dir(&target, &src) || is_inside(&target, &src)) {
+            report.failed.push(FileActionError {
                 path: src_str,
                 error: "폴더를 자기 자신의 하위 폴더로 이동할 수 없습니다.".to_string(),
             });
@@ -151,19 +259,24 @@ pub fn move_items(
 
         // Try fast fs::rename first; fallback to copy + remove across volumes
         match fs::rename(&src, &target) {
-            Ok(()) => succeeded.push(target.to_string_lossy().to_string()),
+            Ok(()) => report.succeeded.push(target.to_string_lossy().to_string()),
             Err(_) => {
                 let fallback = if src.is_dir() {
-                    copy_dir_recursive(&src, &target)
-                        .and_then(|_| fs::remove_dir_all(&src).map_err(|e| e.to_string()))
+                    copy_dir_recursive(&src, &target).and_then(|skipped| {
+                        if skipped > 0 {
+                            Err("링크(정션) 폴더가 포함되어 있어 원본을 유지했습니다.".to_string())
+                        } else {
+                            fs::remove_dir_all(&src).map_err(|e| e.to_string())
+                        }
+                    })
                 } else {
                     fs::copy(&src, &target)
                         .map_err(|e| e.to_string())
                         .and_then(|_| fs::remove_file(&src).map_err(|e| e.to_string()))
                 };
                 match fallback {
-                    Ok(()) => succeeded.push(target.to_string_lossy().to_string()),
-                    Err(err) => failed.push(FileActionError {
+                    Ok(()) => report.succeeded.push(target.to_string_lossy().to_string()),
+                    Err(err) => report.failed.push(FileActionError {
                         path: src_str,
                         error: format!("이동 실패: {}", err),
                     }),
@@ -172,7 +285,7 @@ pub fn move_items(
         }
     }
 
-    Ok(FileActionReport { succeeded, failed })
+    Ok(report)
 }
 
 #[cfg(windows)]
@@ -212,7 +325,7 @@ pub fn delete_items(paths: Vec<String>, permanent: bool) -> Result<FileActionRep
 
     for path_str in paths {
         let path = PathBuf::from(&path_str);
-        if !path.exists() {
+        if !exists_any(&path) {
             failed.push(FileActionError {
                 path: path_str,
                 error: "항목이 이미 존재하지 않습니다.".to_string(),
@@ -248,7 +361,7 @@ pub fn delete_items(paths: Vec<String>, permanent: bool) -> Result<FileActionRep
         }
     }
 
-    Ok(FileActionReport { succeeded, failed })
+    Ok(FileActionReport { succeeded, failed, skipped: Vec::new() })
 }
 
 pub fn rename_item(path: String, new_name: String) -> Result<String, String> {
@@ -300,13 +413,28 @@ pub fn create_text_file(parent_dir: String, name: String, content: String) -> Re
 pub fn open_item(path: String) -> Result<(), String> {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        Command::new("cmd")
-            .creation_flags(CREATE_NO_WINDOW)
-            .args(["/C", "start", "", &path])
-            .spawn()
-            .map_err(|e| format!("항목 열기 실패: {}", e))?;
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain([0]).collect() };
+        let verb = wide("open");
+        let file = wide(&path);
+        // SW_SHOWNORMAL = 1. Return values <= 32 indicate failure.
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                verb.as_ptr(),
+                file.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+            )
+        } as isize;
+        if result <= 32 {
+            return Err(format!("항목 열기 실패 (코드 {}): {}", result, path));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
     }
     Ok(())
 }
@@ -440,7 +568,7 @@ mod tests {
         let copy_rep = copy_items(
             vec![renamed.clone()],
             dst_dir.path().to_string_lossy().to_string(),
-            false,
+            "rename".to_string(),
         )
         .unwrap();
         assert_eq!(copy_rep.succeeded.len(), 1);
@@ -451,5 +579,35 @@ mod tests {
         export_file_list(entries, csv_out.clone(), "csv".to_string()).unwrap();
         let csv_text = fs::read_to_string(&csv_out).unwrap();
         assert!(csv_text.contains("renamed_note.txt"));
+    }
+
+    #[test]
+    fn test_conflict_policies_and_same_folder_move() {
+        let a = tempdir().unwrap();
+        let b = tempdir().unwrap();
+        let a_s = a.path().to_string_lossy().to_string();
+        let b_s = b.path().to_string_lossy().to_string();
+        let src = create_text_file(a_s.clone(), "x.txt".into(), "new".into()).unwrap();
+        create_text_file(b_s.clone(), "x.txt".into(), "old".into()).unwrap();
+
+        assert_eq!(check_conflicts(vec![src.clone()], b_s.clone()).unwrap(), vec!["x.txt"]);
+        // an item already inside the destination is never a conflict
+        assert!(check_conflicts(vec![src.clone()], a_s.clone()).unwrap().is_empty());
+
+        let skip = copy_items(vec![src.clone()], b_s.clone(), "skip".into()).unwrap();
+        assert_eq!(skip.skipped.len(), 1);
+        assert_eq!(fs::read_to_string(b.path().join("x.txt")).unwrap(), "old");
+
+        let keep = copy_items(vec![src.clone()], b_s.clone(), "rename".into()).unwrap();
+        assert!(keep.succeeded[0].ends_with("x (1).txt"));
+
+        copy_items(vec![src.clone()], b_s.clone(), "overwrite".into()).unwrap();
+        assert_eq!(fs::read_to_string(b.path().join("x.txt")).unwrap(), "new");
+
+        // moving into its own folder is a no-op (no "x (1).txt" duplicate)
+        let mv = move_items(vec![src.clone()], a_s, "rename".into()).unwrap();
+        assert_eq!(mv.skipped.len(), 1);
+        assert!(Path::new(&src).exists());
+        assert!(!a.path().join("x (1).txt").exists());
     }
 }

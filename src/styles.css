@@ -2107,3 +2107,14 @@ body,
   padding-top: 4px;
 }
 
+
+/* v1.0.1 dialogs */
+.modal-dialog.modal-sm { width: min(440px, 92vw); }
+.confirm-dialog-body { display: flex; flex-direction: column; gap: 10px; }
+.confirm-dialog-body p { margin: 0; line-height: 1.5; word-break: break-all; }
+.confirm-check { display: flex; align-items: center; gap: 6px; font-size: 12px; opacity: 0.85; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.conflict-actions { flex-wrap: wrap; }
+.conflict-name-list { margin: 0; padding-left: 18px; font-size: 12px; max-height: 120px; overflow: auto; }
+.danger-btn { background: #dc2626 !important; border-color: #dc2626 !important; color: #fff !important; }
+.file-row.cursor-row, .file-card.cursor-row { outline: 1px dotted currentColor; outline-offset: -2px; }

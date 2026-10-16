@@ -1,9 +1,135 @@
-# J-Dir — The Quad Explorer (v1.0.0)
+<div align="center">
 
-**J-Dir**는 Q-Dir 5.00 워크플로우와 레이아웃/설정을 완벽하게 호환하는 Windows용 4분할(Quad-Pane) 파일 탐색기입니다.
+<img src="src-tauri/icons/128x128.png" alt="J-Dir Logo" width="110" height="110" />
 
-## 주요 기능
-- **4분할(Quad) & 다중 레이아웃 지원**: 4분할 격자, 가로/세로 분할, 3분할, 단일 뷰 및 드래그 스플리터 지원
-- **3D 그래픽 아이콘 & 전문가용 하단 상태 표시줄(Footer)**: 폴더/파일 유형별 입체 3D 아이콘 및 Q-Dir 스타일 하단 상태바
-- **Q-Dir 5.00 설정 호환 (`start.qdr` & `Q-Dir.ini`)**: 기존 Q-Dir 설정, 색상 필터, 즐겨찾기(Quick-Links) 즉시 가져오기
-- **GitHub 릴리즈 자동 업데이트**: 최신 릴리즈 감지 시 자동 업데이트 알림 팝업 및 원클릭 설치 후 자동 재시작 지원
+# J-Dir — The Quad Explorer
+
+**Windows를 위한 고성능 4분할(Quad-Pane) 전문가용 파일 탐색기**
+
+[![Developer](https://img.shields.io/badge/Developer-Lebi__Cybereun-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/cybereun)
+[![Release](https://img.shields.io/badge/Release-v1.0.1-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/cybereun/J-Dir/releases)
+[![Tech Stack](https://img.shields.io/badge/Built%20With-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-f59e0b?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/cybereun/J-Dir)
+
+</div>
+
+---
+
+## 개요 (Overview)
+
+**J-Dir**는 **Lebi_Cybereun**이 개발한 Windows용 4분할(Quad-Pane) 파일 탐색기입니다.  
+최대 4개의 독립된 탐색 패널과 다중 탭, 3D 그래픽 아이콘, 확장자별 색상 필터링, Q-Dir 5.00 설정(`start.qdr` & `Q-Dir.ini`) 호환 기능, 그리고 GitHub 연동 자동 업데이트 기능을 제공하여 빠르고 직관적인 파일 관리 환경을 구현합니다.
+
+---
+
+## 주요 기능 (Key Features)
+
+### 1. 9가지 다중 분할 레이아웃 & 자유로운 비율 조절
+- **다양한 분할 모드**:
+  - **4분할**: 기본 2×2 격자(`4-Grid`), 4열 세로(`4-Columns`), 4행 가로(`4-Rows`)
+  - **3분할**: 상1·하2, 상2·하1, 좌1·우2, 좌2·우1 비대칭 레이아웃
+  - **2분할 및 단일 뷰**: 좌·우 2분할, 상·하 2분할, 1패널 전체화면
+- **드래그 분할바 (Splitter)**: 마우스 드래그로 상·하·좌·우 패널 및 좌측 트리창 폭을 자유롭게 조절하고, 상단 `50:50 초기화` 버튼으로 언제든 균등 비율로 복원할 수 있습니다.
+
+### 2. 입체 3D 그래픽 아이콘 & 확장자 색상 필터
+- **3D 그래픽 아이콘**: 드라이브, 폴더, 실행 파일(`.exe`), 압축 파일(`.zip`, `.7z`), 이미지, 오디오, 비디오, 문서, 소스 코드 등 파일 유형별로 직관적인 3D 그래픽 아이콘을 표시합니다.
+- **확장자별 색상 규칙 (Color Filter)**: 파일 확장자 패턴에 따라 파일명 색상을 자동으로 구분하여 표시하며, 사용자 정의 색상 규칙 추가·편집·활성화를 지원합니다.
+
+### 3. 좌측 디렉토리 탐색 트리 (Directory Tree)
+- **자유로운 폴더 트리 제어**: 모든 드라이브와 하위 폴더 구조를 한눈에 탐색하며 **`전부 펼치기`** 및 **`전부 접기`** 기능을 제공합니다.
+- **3가지 트리 표시 모드**: `좌측 통합 트리` → `패널별 개별 트리` → `트리 숨김` 모드를 상단 버튼 하나로 전환할 수 있습니다.
+
+### 4. 패널별 다중 탭(Multi-Tab) & 실시간 필터링
+- **독립 다중 탭**: 4개의 각 패널마다 여러 개의 폴더 탭(`Ctrl+T`)을 열어 동시에 작업할 수 있으며, 탭별 뒤로/앞으로 히스토리를 유지합니다.
+- **4가지 보기 모드**: `자세히(Details)`, `큰 아이콘(Large Icons)`, `간단히(Compact List)`, `썸네일(Thumbnails)` 뷰를 패널별로 지정할 수 있습니다.
+- **실시간 포함/제외 필터**: 각 패널 하단에서 포함 검색어와 제외 키워드(`-키워드`)를 조합하여 파일을 즉시 필터링할 수 있습니다.
+- **폴더 용량 계산**: `크기계산` 버튼을 통해 하위 폴더의 실제 총 용량을 계산하여 표시합니다.
+
+### 5. 패널 간 고속 파일 전송 & 우클릭 컨텍스트 메뉴
+- **패널 간 직접 복사/이동**: 드래그 앤 드롭, 단축키(`F6`), 또는 마우스 우클릭 메뉴(`다른 패널로 즉시 전송 → #1~#4 복사/이동`)를 통해 패널 간 파일을 빠르게 복사하거나 이동합니다.
+- **우클릭 컨텍스트 메뉴**: 열기, 탐색기/터미널(PowerShell)에서 열기, 즐겨찾기 등록, 새 폴더/새 텍스트 파일 생성, 이름 바꾸기, 복사/잘라내기/붙여넣기, 휴지통 삭제(`Del`) 및 **영구 삭제(`Shift+Del`)**를 지원합니다.
+
+### 6. Q-Dir 호환 & 레이아웃 프리셋 / 즐겨찾기 (Quick-Links)
+- **Q-Dir 설정 호환**: 기존 `Q-Dir.ini` 및 `start.qdr` 설정(패널 경로, 분할 비율, 색상 필터, 즐겨찾기)을 그대로 불러올 수 있습니다.
+- **프리셋 & 즐겨찾기 관리**: 현재 4개 패널의 경로와 분할 구성을 프리셋으로 저장·복원하고, 자주 사용하는 폴더와 Windows 특수 폴더(`Desktop`, `Downloads`, `Documents`, `AppData` 등)에 빠르게 접근할 수 있습니다.
+
+### 7. 우측 파일 미리보기 (`[Vorschau]`) & 돋보기 HUD (`Lupe`)
+- **실시간 미리보기 패널**: 파일을 선택하면 이미지, 텍스트/소스 코드, 오디오/비디오, 또는 바이너리 HEX 덤프를 우측 패널에서 즉시 미리 볼 수 있습니다.
+- **화면 배율 & 돋보기 (Lupe)**: 상단 줌 컨트롤(`85%~150%`) 및 플로팅 돋보기 HUD를 통해 선택된 항목 정보를 크게 확인할 수 있습니다.
+
+### 8. 전문가용 하단 상태 표시줄 (Global Status Footer) & 목록 내보내기
+- **하단 상태바**: 활성 패널 번호, 총 항목 수(폴더/파일 개수), 선택된 항목 용량, 클립보드 상태, 현재 경로, 사용자/호스트명, 드라이브 여유 공간 및 사용량 게이지를 하단 푸터에 일목요연하게 표시합니다.
+- **파일 목록 내보내기 (Export)**: 현재 폴더의 파일 목록을 `CSV`, `TXT`, `HTML`, `JSON` 파일로 저장하거나 클립보드에 복사할 수 있습니다.
+
+### 9. GitHub 릴리즈 자동 업데이트 (Auto-Updater)
+- 앱 실행 시 GitHub 저장소의 최신 릴리즈를 자동으로 감지하며, 새 버전이 출시되면 **자동으로 업데이트 팝업창**을 띄웁니다.
+- **`지금 업데이트 설치 및 재시작`** 클릭 한 번으로 최신 설치 파일을 다운로드·설치한 후 앱을 자동으로 재시작합니다. (상단 타이틀 옆 `UP` 아이콘 버튼으로 수동 확인도 가능)
+
+---
+
+## v1.0.1 변경 사항
+
+- **작업 공간 자동 저장/복원**: 레이아웃, 탭, 정렬·필터, 즐겨찾기, 색상 규칙, 테마를 종료 시 저장하고 다음 실행 때 복원합니다.
+- **삭제 확인창**: 영구 삭제는 항상, 휴지통 삭제는 (끌 수 있는) 확인 후 실행합니다.
+- **충돌 처리 창**: 복사/이동 시 같은 이름이 있으면 덮어쓰기 · 둘 다 유지 · 건너뛰기 · 취소를 선택합니다.
+- **키보드 탐색**: 방향키/Enter/Ctrl+A/F2/F5/F7/Alt+←→/Type-ahead.
+- **오류 수정**: 업데이트 설치 버튼 및 상단 업데이트 표시, `&`가 들어간 파일명 열기, 대용량 폴더 계산 중 UI 멈춤, 같은 폴더 이동 시 `(1)` 중복 생성, 정션 폴더 재귀 복사, 숨은 패널로 F6 이동, 필터로 가려진 항목이 삭제되는 문제, 빠른 이동 시 목록 뒤섞임, 한글(CP949) 텍스트 미리보기 깨짐.
+- Q-Dir가 없는 PC에서도 기본값으로 정상 시작합니다.
+
+---
+
+## 단축키 안내 (Keyboard Shortcuts)
+
+| 단축키 | 동작 설명 |
+| :--- | :--- |
+| `Alt + 1 ~ 4` | 패널 `#1` ~ `#4` 포커스 즉시 전환 |
+| `Ctrl + T` | 현재 포커스된 패널에 새 탭 추가 |
+| `Ctrl + C` / `Ctrl + X` | 선택한 파일/폴더 복사 / 잘라내기 |
+| `Ctrl + V` | 현재 활성 패널 경로에 붙여넣기 |
+| `F6` | 선택한 항목을 다음 번호 패널로 즉시 이동 |
+| `Delete` | 선택한 항목을 휴지통으로 삭제 |
+| `Shift + Delete` | 선택한 항목을 즉시 **영구 삭제** |
+| `Backspace` | 상위 폴더로 이동 |
+| `↑` `↓` `Home` `End` `PgUp` `PgDn` | 항목 이동 (`Shift`와 함께 범위 선택) |
+| `Enter` | 선택 항목 열기 / 폴더 진입 |
+| `Ctrl + A` | 현재 패널 전체 선택 |
+| `F2` / `F5` / `F7` | 이름 바꾸기 / 새로고침 / 새 폴더 |
+| `Alt + ←` / `Alt + →` | 뒤로 / 앞으로 |
+| 글자 입력 | 해당 글자로 시작하는 항목으로 이동 (Type-ahead) |
+
+---
+
+## 설치 및 실행 방법 (Installation)
+
+### 방법 1: 설치 프로그램(Installer)으로 설치 (권장)
+1. [**GitHub Releases 페이지**](https://github.com/cybereun/J-Dir/releases/latest)로 이동합니다.
+2. 최신 릴리즈의 **`J-Dir_1.0.1_x64-setup.exe`** 파일을 다운로드합니다.
+3. 다운로드한 설치 파일을 실행하면 Windows에 **J-Dir**가 설치되며 바탕화면 및 시작 메뉴 바로가기가 생성됩니다.
+4. 이후 새로운 버전이 GitHub에 릴리즈되면 앱 실행 시 자동으로 업데이트 알림창이 열리며 원클릭으로 업데이트됩니다.
+
+### 방법 2: 포터블(Portable) 단독 실행 파일 사용
+1. [**GitHub Releases 페이지**](https://github.com/cybereun/J-Dir/releases/latest)에서 **`J-Dir.exe`** 파일을 다운로드합니다.
+2. 별도의 설치 과정 없이 원하는 폴더에 두고 **`J-Dir.exe`**를 더블클릭하면 즉시 실행됩니다.
+
+### 방법 3: 소스 코드에서 직접 빌드하기 (개발자용)
+```powershell
+# 1. 저장소 클론
+git clone https://github.com/cybereun/J-Dir.git
+cd J-Dir
+
+# 2. 의존성 설치
+npm install
+
+# 3. 개발 모드 실행
+npm run tauri dev
+
+# 4. 릴리즈 실행 파일 및 NSIS 설치 파일(.exe) 빌드
+npm run tauri build
+```
+
+---
+
+## 개발자 정보 (Developer)
+
+- **Developer**: **Lebi_Cybereun** ([@cybereun](https://github.com/cybereun))
+- **Repository**: [https://github.com/cybereun/J-Dir](https://github.com/cybereun/J-Dir)

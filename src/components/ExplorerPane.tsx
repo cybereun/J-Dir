@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -77,6 +77,8 @@ interface ExplorerPaneProps {
   globalTreeMode: number;
   clipboard: ClipboardState | null;
   refreshTrigger: number;
+  transferTargets: number[];
+  shortcutsEnabled: boolean;
   onFocusPane: (paneIndex: number) => void;
   onNavigate: (paneIndex: number, newPath: string, addToHistory?: boolean) => void;
   onHistoryBack: (paneIndex: number) => void;
@@ -116,6 +118,8 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   globalTreeMode,
   clipboard,
   refreshTrigger,
+  transferTargets,
+  shortcutsEnabled,
   onFocusPane,
   onNavigate,
   onHistoryBack,
@@ -145,6 +149,11 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   const [addressEditing, setAddressEditing] = useState<boolean>(false);
   const [addressInput, setAddressInput] = useState<string>(currentPath);
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
+  const [cursorIndex, setCursorIndex] = useState<number | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const loadSeqRef = useRef(0);
+  const renamingRef = useRef<string | null>(null);
+  const typeAheadRef = useRef<{ buffer: string; timer: number | null }>({ buffer: "", timer: null });
 
   // Inline rename state
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -168,17 +177,20 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
   const loadDir = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setErrorMsg(null);
     try {
       const list = await apiListDirectory(currentPath, showHidden);
+      if (seq !== loadSeqRef.current) return; // a newer navigation superseded this request
       setEntries(list);
       onEntriesLoaded?.(pane.index, list);
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       setErrorMsg(String(err));
       setEntries([]);
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, [currentPath, showHidden, pane.index, onEntriesLoaded]);
 
@@ -186,6 +198,11 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
     setAddressInput(currentPath);
     loadDir();
   }, [currentPath, showHidden, refreshTrigger, loadDir]);
+
+  useEffect(() => {
+    setLastClickedIndex(null);
+    setCursorIndex(null);
+  }, [currentPath]);
 
   useEffect(() => {
     const closeMenus = () => {
@@ -213,6 +230,25 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
     const filtered = filterEntries(entries, pane.includeFilter, pane.negativeFilter);
     return sortEntries(filtered, pane.sortField, pane.sortAsc, pane.folderSizes);
   }, [entries, pane.includeFilter, pane.negativeFilter, pane.sortField, pane.sortAsc, pane.folderSizes]);
+
+  // Drop selections that are no longer visible (filter changed / items removed) so that
+  // Delete/Copy never act on items the user cannot see.
+  useEffect(() => {
+    if (pane.selectedPaths.length === 0) return;
+    const visible = new Set(visibleEntries.map((e) => e.path));
+    const kept = pane.selectedPaths.filter((p) => visible.has(p));
+    if (kept.length !== pane.selectedPaths.length) {
+      onUpdatePane(pane.index, { selectedPaths: kept });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleEntries]);
+
+  useEffect(() => {
+    if (cursorIndex === null || !isFocused) return;
+    sectionRef.current
+      ?.querySelector(`[data-idx="${cursorIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [cursorIndex, isFocused]);
 
   const currentDriveRoot = useMemo(() => getDriveRoot(currentPath), [currentPath]);
 
@@ -258,6 +294,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
     e.stopPropagation();
     onFocusPane(pane.index);
     onSelectForPreview(entry);
+    setCursorIndex(idx);
 
     if (e.shiftKey && lastClickedIndex !== null) {
       const start = Math.min(lastClickedIndex, idx);
@@ -307,16 +344,25 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   };
 
   const startRename = (entry: FileEntry) => {
+    renamingRef.current = entry.path;
     setRenamingPath(entry.path);
     setRenameValue(entry.name);
   };
 
+  const cancelRename = () => {
+    renamingRef.current = null;
+    setRenamingPath(null);
+  };
+
   const commitRename = async () => {
-    if (!renamingPath) return;
-    const targetPath = renamingPath;
+    // The ref guards against the Enter/Escape + blur double invocation.
+    const targetPath = renamingRef.current;
+    if (!targetPath) return;
+    renamingRef.current = null;
+    const originalName = entries.find((e) => e.path === targetPath)?.name;
     const newName = renameValue.trim();
     setRenamingPath(null);
-    if (!newName) return;
+    if (!newName || newName === originalName) return;
 
     try {
       await apiRenameItem(targetPath, newName);
@@ -419,11 +465,172 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
     }
   };
 
+  // Pane-level keyboard navigation (active only for the focused pane while no dialog is open)
+  useEffect(() => {
+    if (!isFocused || !shortcutsEnabled) return;
+
+    const selectRange = (anchor: number, cursor: number) => {
+      const start = Math.min(anchor, cursor);
+      const end = Math.max(anchor, cursor);
+      onUpdatePane(pane.index, {
+        selectedPaths: visibleEntries.slice(start, end + 1).map((it) => it.path),
+      });
+    };
+
+    const moveTo = (rawNext: number, extend: boolean) => {
+      const n = visibleEntries.length;
+      if (n === 0) return;
+      const next = Math.max(0, Math.min(n - 1, rawNext));
+      if (extend) {
+        selectRange(lastClickedIndex ?? next, next);
+      } else {
+        onUpdatePane(pane.index, { selectedPaths: [visibleEntries[next].path] });
+        setLastClickedIndex(next);
+      }
+      setCursorIndex(next);
+      onSelectForPreview(visibleEntries[next]);
+    };
+
+    const currentCursor = (): number => {
+      if (cursorIndex !== null && cursorIndex < visibleEntries.length) return cursorIndex;
+      const firstSel = visibleEntries.findIndex((it) => pane.selectedPaths.includes(it.path));
+      return firstSel;
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (renamingRef.current) return;
+
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          if (activeTab && activeTab.historyIndex > 0) onHistoryBack(pane.index);
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          if (activeTab && activeTab.historyIndex < activeTab.history.length - 1) {
+            onHistoryForward(pane.index);
+          }
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        onUpdatePane(pane.index, { selectedPaths: visibleEntries.map((it) => it.path) });
+        return;
+      }
+      if (e.ctrlKey || e.metaKey) return;
+
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          moveTo(currentCursor() + 1, e.shiftKey);
+          return;
+        case "ArrowUp":
+          e.preventDefault();
+          moveTo(currentCursor() < 0 ? 0 : currentCursor() - 1, e.shiftKey);
+          return;
+        case "ArrowRight":
+          if (pane.viewMode !== "details") {
+            e.preventDefault();
+            moveTo(currentCursor() + 1, e.shiftKey);
+          }
+          return;
+        case "ArrowLeft":
+          if (pane.viewMode !== "details") {
+            e.preventDefault();
+            moveTo(currentCursor() < 0 ? 0 : currentCursor() - 1, e.shiftKey);
+          }
+          return;
+        case "PageDown":
+          e.preventDefault();
+          moveTo(currentCursor() + 10, e.shiftKey);
+          return;
+        case "PageUp":
+          e.preventDefault();
+          moveTo(currentCursor() - 10, e.shiftKey);
+          return;
+        case "Home":
+          e.preventDefault();
+          moveTo(0, e.shiftKey);
+          return;
+        case "End":
+          e.preventDefault();
+          moveTo(visibleEntries.length - 1, e.shiftKey);
+          return;
+        case "Enter": {
+          const idx = currentCursor();
+          const target =
+            idx >= 0 && pane.selectedPaths.includes(visibleEntries[idx]?.path)
+              ? visibleEntries[idx]
+              : selectedEntries[0];
+          if (target) {
+            e.preventDefault();
+            handleItemDoubleClick(target);
+          }
+          return;
+        }
+        case "F2":
+          if (selectedEntries.length === 1) {
+            e.preventDefault();
+            startRename(selectedEntries[0]);
+          }
+          return;
+        case "F5":
+          e.preventDefault();
+          loadDir();
+          return;
+        case "F7":
+          e.preventDefault();
+          setCreatingMode("folder");
+          setCreateNameInput("새 폴더");
+          return;
+        default:
+          break;
+      }
+
+      // Type-ahead: jump to the first entry whose name starts with the typed letters
+      if (e.key.length === 1 && !e.altKey && visibleEntries.length > 0) {
+        const ta = typeAheadRef.current;
+        if (e.key === " " && ta.buffer === "") return;
+        if (ta.timer !== null) window.clearTimeout(ta.timer);
+        ta.buffer += e.key.toLowerCase();
+        ta.timer = window.setTimeout(() => {
+          ta.buffer = "";
+          ta.timer = null;
+        }, 800);
+        const hit = visibleEntries.findIndex((it) => it.name.toLowerCase().startsWith(ta.buffer));
+        if (hit >= 0) {
+          e.preventDefault();
+          moveTo(hit, false);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isFocused,
+    shortcutsEnabled,
+    visibleEntries,
+    selectedEntries,
+    cursorIndex,
+    lastClickedIndex,
+    pane.selectedPaths,
+    pane.viewMode,
+    pane.index,
+    activeTab,
+    loadDir,
+  ]);
+
   const showLocalTree = globalTreeMode === 0 || pane.showLocalTree;
   const parentPath = getParentPath(currentPath);
 
   return (
     <section
+      ref={sectionRef}
       className={`explorer-pane ${isFocused ? "focused-pane" : ""} ${
         isDragOver ? "drag-over-pane" : ""
       }`}
@@ -862,6 +1069,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
                   return (
                     <tr
                       key={entry.path}
+                      data-idx={idx}
                       draggable={!isRenaming}
                       onDragStart={(e) => handleDragStart(e, entry)}
                       className={`file-row ${isSelected ? "selected" : ""} ${
@@ -891,7 +1099,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
                             onBlur={commitRename}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") commitRename();
-                              if (e.key === "Escape") setRenamingPath(null);
+                              if (e.key === "Escape") cancelRename();
                             }}
                             onClick={(e) => e.stopPropagation()}
                             autoFocus
@@ -941,6 +1149,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
                 return (
                   <div
                     key={entry.path}
+                    data-idx={idx}
                     draggable
                     onDragStart={(e) => handleDragStart(e, entry)}
                     className={`file-card ${isSelected ? "selected" : ""}`}
@@ -1034,7 +1243,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
             <span className="transfer-caption">
               <Send size={11} /> 다른 패널로 전송:
             </span>
-            {[0, 1, 2, 3]
+            {transferTargets
               .filter((targetIdx) => targetIdx !== pane.index)
               .map((targetIdx) => (
                 <div key={targetIdx} className="transfer-btn-pair">

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
+  ConflictPolicy,
   DriveInfo,
   FileActionReport,
   FileEntry,
@@ -141,27 +142,34 @@ export async function apiCalculateFolderSize(path: string): Promise<FolderSizeSt
   return invoke<FolderSizeStats>("cmd_calculate_folder_size", { path });
 }
 
+export async function apiCheckConflicts(
+  sources: string[],
+  destinationDir: string
+): Promise<string[]> {
+  return invoke<string[]>("cmd_check_conflicts", { sources, destinationDir });
+}
+
 export async function apiCopyItems(
   sources: string[],
   destinationDir: string,
-  overwrite = false
+  policy: ConflictPolicy = "rename"
 ): Promise<FileActionReport> {
   return invoke<FileActionReport>("cmd_copy_items", {
     sources,
     destinationDir,
-    overwrite,
+    policy,
   });
 }
 
 export async function apiMoveItems(
   sources: string[],
   destinationDir: string,
-  overwrite = false
+  policy: ConflictPolicy = "rename"
 ): Promise<FileActionReport> {
   return invoke<FileActionReport>("cmd_move_items", {
     sources,
     destinationDir,
-    overwrite,
+    policy,
   });
 }
 
@@ -289,9 +297,9 @@ export async function apiCheckForUpdates(): Promise<UpdateCheckResult> {
   if (!isTauriRuntime()) {
     return {
       updateAvailable: false,
-      currentVersion: "1.0.0",
-      latestVersion: "1.0.0",
-      releaseTitle: "J-Dir v1.0.0",
+      currentVersion: "1.0.1",
+      latestVersion: "1.0.1",
+      releaseName: "J-Dir v1.0.1",
       releaseNotes: "최신 버전을 사용 중입니다.",
       publishedAt: new Date().toISOString(),
       downloadUrl: "",

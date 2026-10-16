@@ -28,6 +28,26 @@ fn format_hex_dump(bytes: &[u8]) -> String {
     lines.join("\n")
 }
 
+/// Decodes preview bytes: UTF-8 (tolerating a multibyte char cut at the read limit),
+/// then CP949/EUC-KR (common for legacy Korean text), finally lossy.
+fn decode_text(buf: &[u8], truncated: bool) -> (String, &'static str) {
+    let body = buf.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(buf);
+    match std::str::from_utf8(body) {
+        Ok(s) => (s.to_string(), "UTF-8"),
+        Err(e) if truncated && e.error_len().is_none() => {
+            (String::from_utf8_lossy(&body[..e.valid_up_to()]).to_string(), "UTF-8")
+        }
+        Err(_) => {
+            let (cow, _, had_errors) = encoding_rs::EUC_KR.decode(body);
+            if had_errors {
+                (String::from_utf8_lossy(body).to_string(), "ANSI/Lossy")
+            } else {
+                (cow.to_string(), "CP949 (한글)")
+            }
+        }
+    }
+}
+
 pub fn read_file_preview(path: String, max_bytes: usize) -> Result<FilePreviewData, String> {
     let p = Path::new(&path);
     if !p.exists() {
@@ -141,14 +161,13 @@ pub fn read_file_preview(path: String, max_bytes: usize) -> Result<FilePreviewDa
     );
 
     let limit = max_bytes.clamp(1024, 256 * 1024);
-    let mut file = File::open(p).map_err(|e| format!("파일 열기 실패: {}", e))?;
+    let file = File::open(p).map_err(|e| format!("파일 열기 실패: {}", e))?;
     let to_read = (size as usize).min(limit);
-    let mut buf = vec![0u8; to_read];
-    let n = file
-        .read(&mut buf)
+    let mut buf = Vec::with_capacity(to_read);
+    file.take(to_read as u64)
+        .read_to_end(&mut buf)
         .map_err(|e| format!("파일 데이터 읽기 실패: {}", e))?;
-    buf.truncate(n);
-    let truncated = (size as usize) > n;
+    let truncated = (size as usize) > buf.len();
 
     // Detect UTF-16LE BOM or UTF-16LE pattern
     let is_utf16le = (buf.len() >= 2 && buf[0] == 0xFF && buf[1] == 0xFE)
@@ -183,10 +202,7 @@ pub fn read_file_preview(path: String, max_bytes: usize) -> Result<FilePreviewDa
     // Check if binary (contains null bytes when not UTF-16)
     let has_null = buf.iter().take(512).any(|&b| b == 0);
     if is_known_text || (!has_null && !buf.is_empty()) {
-        let (text, enc) = match std::str::from_utf8(&buf) {
-            Ok(s) => (s.to_string(), "UTF-8"),
-            Err(_) => (String::from_utf8_lossy(&buf).to_string(), "ANSI/Lossy"),
-        };
+        let (text, enc) = decode_text(&buf, truncated);
         return Ok(FilePreviewData {
             path,
             name,

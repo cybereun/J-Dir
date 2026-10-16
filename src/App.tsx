@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardState,
   ColorFilterRule,
+  ConflictPolicy,
   DriveInfo,
   FileEntry,
   LayoutMode,
@@ -9,6 +10,7 @@ import {
   PaneTab,
   QuickLinkItem,
   SavedQdrPreset,
+  SortField,
   UpdateCheckResult,
   ViewMode,
 } from "./types/jdir";
@@ -19,6 +21,7 @@ import {
   qdirViewModeNumberToViewMode,
 } from "./utils/colorFilter";
 import {
+  apiCheckConflicts,
   apiCheckForUpdates,
   apiCopyItems,
   apiDeleteItems,
@@ -34,6 +37,8 @@ import { PreviewPanel } from "./components/PreviewPanel";
 import { GlobalFooter } from "./components/GlobalFooter";
 import {
   ColorFilterModal,
+  ConfirmDeleteDialog,
+  ConflictDialog,
   ExportListModal,
   MagnifierHud,
   PresetsAndFavoritesModal,
@@ -80,36 +85,173 @@ function makeInitialPane(
   };
 }
 
+const SESSION_KEY = "jdir_session_v1";
+const ALL_LAYOUTS: LayoutMode[] = [
+  "4-grid",
+  "4-columns",
+  "4-rows",
+  "3-top1-bottom2",
+  "3-top2-bottom1",
+  "3-left1-right2",
+  "3-left2-right1",
+  "2-vertical",
+  "2-horizontal",
+  "1-single",
+];
+const ALL_VIEW_MODES: ViewMode[] = ["details", "large-icons", "small-icons", "list", "tiles"];
+const ALL_SORT_FIELDS: SortField[] = ["name", "size", "extension", "modifiedMs", "fileType"];
+
+interface SessionData {
+  theme: "dark" | "light";
+  layoutMode: LayoutMode;
+  treeMode: number;
+  previewEnabled: boolean;
+  useColorStart: boolean;
+  showHidden: boolean;
+  confirmTrash: boolean;
+  zoomPct: number;
+  sptPct: number;
+  sp0Pct: number;
+  sp1Pct: number;
+  sp2Pct: number;
+  activeFocus: number;
+  colorRules: ColorFilterRule[] | null;
+  quickLinks: QuickLinkItem[];
+  panes: PaneState[];
+}
+
+function clampNum(v: unknown, fallback: number, min: number, max: number): number {
+  return typeof v === "number" && Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback;
+}
+
+function loadSession(): SessionData | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d: Record<string, any> = JSON.parse(raw);
+    if (!d || d.v !== 1 || !Array.isArray(d.panes) || d.panes.length !== 4) return null;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const panes: PaneState[] = d.panes.map((p: Record<string, any>, i: number) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tabs: PaneTab[] = (Array.isArray(p?.tabs) ? p.tabs : [])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .filter((t: Record<string, any>) => t && typeof t.id === "string" && typeof t.path === "string")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((t: Record<string, any>): PaneTab => {
+          const history: string[] =
+            Array.isArray(t.history) && t.history.length > 0 && t.history.every((h: unknown) => typeof h === "string")
+              ? t.history
+              : [t.path];
+          return {
+            id: t.id,
+            title: folderTitleFromPath(t.path),
+            path: t.path,
+            history,
+            historyIndex: clampNum(t.historyIndex, history.length - 1, 0, history.length - 1),
+          };
+        });
+      if (tabs.length === 0) {
+        return makeInitialPane(i, "C:\\");
+      }
+      const activeTabId = tabs.some((t) => t.id === p.activeTabId) ? p.activeTabId : tabs[0].id;
+      return {
+        index: i,
+        tabs,
+        activeTabId,
+        viewMode: ALL_VIEW_MODES.includes(p.viewMode) ? p.viewMode : "details",
+        sortField: ALL_SORT_FIELDS.includes(p.sortField) ? p.sortField : "name",
+        sortAsc: typeof p.sortAsc === "boolean" ? p.sortAsc : true,
+        showFilterBar: typeof p.showFilterBar === "boolean" ? p.showFilterBar : true,
+        includeFilter: typeof p.includeFilter === "string" ? p.includeFilter : "",
+        negativeFilter: typeof p.negativeFilter === "string" ? p.negativeFilter : "",
+        showLocalTree: Boolean(p.showLocalTree),
+        selectedPaths: [],
+        folderSizes: {},
+      };
+    });
+
+    return {
+      theme: d.theme === "dark" ? "dark" : "light",
+      layoutMode: ALL_LAYOUTS.includes(d.layoutMode) ? d.layoutMode : "4-grid",
+      treeMode: [0, 1, 2].includes(d.treeMode) ? d.treeMode : 1,
+      previewEnabled: Boolean(d.previewEnabled),
+      useColorStart: d.useColorStart !== false,
+      showHidden: d.showHidden !== false,
+      confirmTrash: d.confirmTrash !== false,
+      zoomPct: clampNum(d.zoomPct, 100, 85, 160),
+      sptPct: clampNum(d.sptPct, 17, 12, 35),
+      sp0Pct: clampNum(d.sp0Pct, 50, 15, 85),
+      sp1Pct: clampNum(d.sp1Pct, 50, 15, 85),
+      sp2Pct: clampNum(d.sp2Pct, 50, 15, 85),
+      activeFocus: clampNum(d.activeFocus, 0, 0, 3),
+      colorRules: Array.isArray(d.colorRules) && d.colorRules.length > 0 ? d.colorRules : null,
+      quickLinks: Array.isArray(d.quickLinks) ? d.quickLinks : [],
+      panes,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Panes that are actually on screen for a layout (hidden panes must never be a transfer target). */
+function visiblePaneIndices(layout: LayoutMode, activeFocus: number): number[] {
+  switch (layout) {
+    case "1-single":
+      return [activeFocus];
+    case "2-vertical":
+    case "2-horizontal":
+      return [0, 1];
+    case "3-top1-bottom2":
+    case "3-top2-bottom1":
+    case "3-left1-right2":
+    case "3-left2-right1":
+      return [0, 1, 2];
+    default:
+      return [0, 1, 2, 3];
+  }
+}
+
+const initialSession = loadSession();
+
 export const App: React.FC = () => {
-  const [theme, setTheme] = useState<"dark" | "light">("light");
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>("4-grid");
-  const [treeMode, setTreeMode] = useState<number>(1); // 1 = Global tree, 0 = Per-pane tree, 2 = Off
-  const [previewEnabled, setPreviewEnabled] = useState<boolean>(false);
-  const [useColorStart, setUseColorStart] = useState<boolean>(true);
-  const [showHidden, setShowHidden] = useState<boolean>(true);
-  const [zoomPct, setZoomPct] = useState<number>(100);
+  const [theme, setTheme] = useState<"dark" | "light">(initialSession?.theme ?? "light");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(initialSession?.layoutMode ?? "4-grid");
+  const [treeMode, setTreeMode] = useState<number>(initialSession?.treeMode ?? 1); // 1 = Global tree, 0 = Per-pane tree, 2 = Off
+  const [previewEnabled, setPreviewEnabled] = useState<boolean>(initialSession?.previewEnabled ?? false);
+  const [useColorStart, setUseColorStart] = useState<boolean>(initialSession?.useColorStart ?? true);
+  const [showHidden, setShowHidden] = useState<boolean>(initialSession?.showHidden ?? true);
+  const [confirmTrash, setConfirmTrash] = useState<boolean>(initialSession?.confirmTrash ?? true);
+  const [zoomPct, setZoomPct] = useState<number>(initialSession?.zoomPct ?? 100);
   const [magnifierActive, setMagnifierActive] = useState<boolean>(false);
 
   // Q-Dir split ratios (in percentages, mapped from SP0=5000, SP1=5000, SP2=5000, SPT=1617)
-  const [sptPct, setSptPct] = useState<number>(17);
-  const [sp0Pct, setSp0Pct] = useState<number>(50);
-  const [sp1Pct, setSp1Pct] = useState<number>(50);
-  const [sp2Pct, setSp2Pct] = useState<number>(50);
+  const [sptPct, setSptPct] = useState<number>(initialSession?.sptPct ?? 17);
+  const [sp0Pct, setSp0Pct] = useState<number>(initialSession?.sp0Pct ?? 50);
+  const [sp1Pct, setSp1Pct] = useState<number>(initialSession?.sp1Pct ?? 50);
+  const [sp2Pct, setSp2Pct] = useState<number>(initialSession?.sp2Pct ?? 50);
 
-  const [activeFocus, setActiveFocus] = useState<number>(2); // Focus=3 in Q-Dir -> index 2 (or 0..3)
+  const [activeFocus, setActiveFocus] = useState<number>(initialSession?.activeFocus ?? 2); // Focus=3 in Q-Dir -> index 2 (or 0..3)
   const [drives, setDrives] = useState<DriveInfo[]>([]);
-  const [quickLinks, setQuickLinks] = useState<QuickLinkItem[]>([]);
-  const [colorRules, setColorRules] = useState<ColorFilterRule[]>(DEFAULT_QDIR_COLOR_RULES);
+  const [quickLinks, setQuickLinks] = useState<QuickLinkItem[]>(initialSession?.quickLinks ?? []);
+  const [colorRules, setColorRules] = useState<ColorFilterRule[]>(
+    initialSession?.colorRules ?? DEFAULT_QDIR_COLOR_RULES
+  );
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const [selectedForPreview, setSelectedForPreview] = useState<FileEntry | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
-  const [panes, setPanes] = useState<PaneState[]>(() => [
-    makeInitialPane(0, "Y:\\내 드라이브\\AI\\App_Bulid", "details", true),
-    makeInitialPane(1, "E:\\UTIL\\4.시스템\\Q-Dir_Portable_x64\\Q-Dir", "details", true),
-    makeInitialPane(2, "C:\\", "details", true),
-    makeInitialPane(3, "C:\\", "details", true),
-  ]);
+  // First run starts on C:\ and is then populated from Q-Dir settings / built-in defaults.
+  const [panes, setPanes] = useState<PaneState[]>(
+    () =>
+      initialSession?.panes ?? [
+        makeInitialPane(0, "C:\\", "details", true),
+        makeInitialPane(1, "C:\\", "details", true),
+        makeInitialPane(2, "C:\\", "details", true),
+        makeInitialPane(3, "C:\\", "details", true),
+      ]
+  );
 
   const paneEntriesRef = useRef<Record<number, FileEntry[]>>({});
   const [paneEntriesMap, setPaneEntriesMap] = useState<Record<number, FileEntry[]>>({});
@@ -145,6 +287,18 @@ export const App: React.FC = () => {
 
   // Toast notification
   const [toast, setToast] = useState<{ msg: string; isError?: boolean } | null>(null);
+
+  const [pendingDelete, setPendingDelete] = useState<{
+    paneIndex: number;
+    paths: string[];
+    permanent: boolean;
+  } | null>(null);
+  const [conflictPrompt, setConflictPrompt] = useState<{
+    names: string[];
+    mode: "copy" | "move";
+    resolve: (policy: ConflictPolicy | null) => void;
+  } | null>(null);
+  const dialogOpen = activeModal !== null || pendingDelete !== null || conflictPrompt !== null;
 
   const notify = useCallback((msg: string, isError = false) => {
     setToast({ msg, isError });
@@ -287,7 +441,9 @@ export const App: React.FC = () => {
     apiListDrives()
       .then(setDrives)
       .catch(() => {});
-    applyQDirConfig(undefined, false);
+    if (!initialSession) {
+      applyQDirConfig(undefined, false);
+    }
     handleCheckUpdates(false);
   }, [applyQDirConfig, handleCheckUpdates]);
 
@@ -428,6 +584,63 @@ export const App: React.FC = () => {
     [notify]
   );
 
+  const askConflictPolicy = useCallback(
+    (names: string[], mode: "copy" | "move") =>
+      new Promise<ConflictPolicy | null>((resolve) => {
+        setConflictPrompt({ names, mode, resolve });
+      }),
+    []
+  );
+
+  /** Copies/moves `paths` into `destDir`, asking how to resolve name conflicts. Returns true on full success. */
+  const executeTransfer = useCallback(
+    async (
+      paths: string[],
+      destDir: string,
+      mode: "copy" | "move",
+      label: string
+    ): Promise<boolean> => {
+      try {
+        const names = await apiCheckConflicts(paths, destDir);
+        let policy: ConflictPolicy = "rename";
+        if (names.length > 0) {
+          const chosen = await askConflictPolicy(names, mode);
+          if (!chosen) {
+            notify("작업이 취소되었습니다.");
+            return false;
+          }
+          policy = chosen;
+        }
+        const report =
+          mode === "copy"
+            ? await apiCopyItems(paths, destDir, policy)
+            : await apiMoveItems(paths, destDir, policy);
+
+        setRefreshTrigger((t) => t + 1);
+        const skippedCount = report.skipped?.length ?? 0;
+        if (report.failed.length > 0) {
+          notify(
+            `성공 ${report.succeeded.length}개 / 실패 ${report.failed.length}개: ${report.failed[0].error}`,
+            true
+          );
+          return false;
+        }
+        if (report.succeeded.length === 0) {
+          notify(`변경된 항목이 없습니다 (건너뜀 ${skippedCount}개).`);
+          return true;
+        }
+        notify(
+          `${label} ${report.succeeded.length}개 완료${skippedCount > 0 ? ` (건너뜀 ${skippedCount}개)` : ""}`
+        );
+        return true;
+      } catch (err) {
+        notify(String(err), true);
+        return false;
+      }
+    },
+    [askConflictPolicy, notify]
+  );
+
   const handlePasteFromClipboard = useCallback(
     async (targetPaneIndex: number) => {
       if (!clipboard || clipboard.paths.length === 0) return;
@@ -436,34 +649,17 @@ export const App: React.FC = () => {
         targetPane.tabs.find((t) => t.id === targetPane.activeTabId) ||
         targetPane.tabs[0];
       const destDir = activeTab.path;
-
-      try {
-        const report =
-          clipboard.mode === "copy"
-            ? await apiCopyItems(clipboard.paths, destDir, false)
-            : await apiMoveItems(clipboard.paths, destDir, false);
-
-        if (clipboard.mode === "cut") {
-          setClipboard(null);
-        }
-        setRefreshTrigger((t) => t + 1);
-        if (report.failed.length > 0) {
-          notify(
-            `성공 ${report.succeeded.length}개 / 실패 ${report.failed.length}개: ${report.failed[0].error}`,
-            true
-          );
-        } else {
-          notify(
-            `패널 #${targetPaneIndex + 1}(${folderTitleFromPath(destDir)})에 ${
-              report.succeeded.length
-            }개 항목 붙여넣기 완료`
-          );
-        }
-      } catch (err) {
-        notify(String(err), true);
+      const ok = await executeTransfer(
+        clipboard.paths,
+        destDir,
+        clipboard.mode === "copy" ? "copy" : "move",
+        `패널 #${targetPaneIndex + 1}(${folderTitleFromPath(destDir)}) 붙여넣기`
+      );
+      if (ok && clipboard.mode === "cut") {
+        setClipboard(null);
       }
     },
-    [clipboard, panes, notify]
+    [clipboard, panes, executeTransfer]
   );
 
   const handleTransferBetweenPanes = useCallback(
@@ -478,37 +674,18 @@ export const App: React.FC = () => {
       const activeTab =
         targetPane.tabs.find((t) => t.id === targetPane.activeTabId) ||
         targetPane.tabs[0];
-      const destDir = activeTab.path;
-
-      try {
-        const report =
-          mode === "copy"
-            ? await apiCopyItems(paths, destDir, false)
-            : await apiMoveItems(paths, destDir, false);
-
-        setRefreshTrigger((t) => t + 1);
-        if (report.failed.length > 0) {
-          notify(
-            `전송 중 오류 (${report.failed.length}건): ${report.failed[0].error}`,
-            true
-          );
-        } else {
-          notify(
-            `패널 #${sourcePaneIndex + 1} → 패널 #${targetPaneIndex + 1} (${
-              mode === "copy" ? "복사" : "이동"
-            } ${report.succeeded.length}개 완료)`
-          );
-        }
-      } catch (err) {
-        notify(String(err), true);
-      }
+      await executeTransfer(
+        paths,
+        activeTab.path,
+        mode,
+        `패널 #${sourcePaneIndex + 1} → #${targetPaneIndex + 1} ${mode === "copy" ? "복사" : "이동"}`
+      );
     },
-    [panes, notify]
+    [panes, executeTransfer]
   );
 
-  const handleDeletePaths = useCallback(
+  const performDelete = useCallback(
     async (paneIndex: number, paths: string[], permanent: boolean) => {
-      if (paths.length === 0) return;
       try {
         const report = await apiDeleteItems(paths, permanent);
         handleUpdatePane(paneIndex, { selectedPaths: [] });
@@ -527,6 +704,18 @@ export const App: React.FC = () => {
       }
     },
     [handleUpdatePane, notify]
+  );
+
+  const handleDeletePaths = useCallback(
+    (paneIndex: number, paths: string[], permanent: boolean) => {
+      if (paths.length === 0) return;
+      if (permanent || confirmTrash) {
+        setPendingDelete({ paneIndex, paths, permanent });
+      } else {
+        performDelete(paneIndex, paths, false);
+      }
+    },
+    [confirmTrash, performDelete]
   );
 
   const handleAddQuickLink = useCallback(
@@ -625,9 +814,22 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  // Global keyboard shortcuts (Ctrl+C, Ctrl+X, Ctrl+V, Del, Backspace, Ctrl+T, Alt+1..4)
+  // Global keyboard shortcuts (Ctrl+C/X/V/T, Del, Backspace, F6, Alt+1..4).
+  // Pane-level navigation (arrows, Enter, F2/F5/F7, Ctrl+A, Alt+←/→) lives in ExplorerPane.
+  const visiblePanes = useMemo(
+    () => visiblePaneIndices(layoutMode, activeFocus),
+    [layoutMode, activeFocus]
+  );
+
+  useEffect(() => {
+    if (layoutMode !== "1-single" && !visiblePanes.includes(activeFocus)) {
+      setActiveFocus(visiblePanes[0]);
+    }
+  }, [layoutMode, visiblePanes, activeFocus]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (dialogOpen) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
         return;
@@ -641,7 +843,10 @@ export const App: React.FC = () => {
 
       if (e.altKey && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault();
-        setActiveFocus(Number(e.key) - 1);
+        const idx = Number(e.key) - 1;
+        if (layoutMode === "1-single" || visiblePanes.includes(idx)) {
+          setActiveFocus(idx);
+        }
         return;
       }
 
@@ -675,10 +880,15 @@ export const App: React.FC = () => {
           handleNavigate(activeFocus, parent, true);
         }
       } else if (e.key === "F6") {
-        // Quick move to next pane
+        // Quick move to the next *visible* pane
         if (activePane.selectedPaths.length > 0) {
           e.preventDefault();
-          const targetIdx = (activeFocus + 1) % 4;
+          const pos = visiblePanes.indexOf(activeFocus);
+          if (visiblePanes.length < 2 || pos < 0) {
+            notify("이동할 다른 패널이 화면에 없습니다.", true);
+            return;
+          }
+          const targetIdx = visiblePanes[(pos + 1) % visiblePanes.length];
           handleTransferBetweenPanes(
             activeFocus,
             targetIdx,
@@ -692,15 +902,79 @@ export const App: React.FC = () => {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    dialogOpen,
+    layoutMode,
+    visiblePanes,
     activeFocus,
     panes,
     clipboard,
+    notify,
     handleCopySelectionToClipboard,
     handlePasteFromClipboard,
     handleAddTab,
     handleDeletePaths,
     handleNavigate,
     handleTransferBetweenPanes,
+  ]);
+
+  // Persist the workspace (debounced) so the next launch restores it.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify({
+            v: 1,
+            theme,
+            layoutMode,
+            treeMode,
+            previewEnabled,
+            useColorStart,
+            showHidden,
+            confirmTrash,
+            zoomPct,
+            sptPct,
+            sp0Pct,
+            sp1Pct,
+            sp2Pct,
+            activeFocus,
+            colorRules,
+            quickLinks,
+            panes: panes.map((p) => ({
+              tabs: p.tabs,
+              activeTabId: p.activeTabId,
+              viewMode: p.viewMode,
+              sortField: p.sortField,
+              sortAsc: p.sortAsc,
+              showFilterBar: p.showFilterBar,
+              includeFilter: p.includeFilter,
+              negativeFilter: p.negativeFilter,
+              showLocalTree: p.showLocalTree,
+            })),
+          })
+        );
+      } catch {
+        // storage unavailable — session simply won't persist
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    theme,
+    layoutMode,
+    treeMode,
+    previewEnabled,
+    useColorStart,
+    showHidden,
+    confirmTrash,
+    zoomPct,
+    sptPct,
+    sp0Pct,
+    sp1Pct,
+    sp2Pct,
+    activeFocus,
+    colorRules,
+    quickLinks,
+    panes,
   ]);
 
   const activePane = panes[activeFocus] || panes[0];
@@ -721,6 +995,8 @@ export const App: React.FC = () => {
       globalTreeMode={treeMode}
       clipboard={clipboard}
       refreshTrigger={refreshTrigger}
+      transferTargets={visiblePanes.filter((i) => i !== paneIndex)}
+      shortcutsEnabled={!dialogOpen}
       onFocusPane={setActiveFocus}
       onNavigate={handleNavigate}
       onHistoryBack={handleHistoryBack}
@@ -1005,7 +1281,8 @@ export const App: React.FC = () => {
         onOpenPresetsModal={() => setActiveModal("presets")}
         onOpenExportModal={() => setActiveModal("export")}
         onImportOriginalQDir={() => applyQDirConfig(undefined, true)}
-        hasUpdateAvailable={Boolean(updateInfo?.updateAvailable)}
+        updateAvailable={Boolean(updateInfo?.updateAvailable)}
+        latestVersion={updateInfo?.latestVersion}
         onOpenUpdateModal={() => {
           setActiveModal("update");
           handleCheckUpdates(true);
@@ -1097,8 +1374,33 @@ export const App: React.FC = () => {
           installing={updateInstalling}
           errorMsg={updateError}
           onCheckAgain={() => handleCheckUpdates(true)}
-          onInstallAndRestart={handleInstallUpdateAndRestart}
+          onInstallNow={handleInstallUpdateAndRestart}
           onClose={() => setActiveModal(null)}
+        />
+      )}
+
+      {pendingDelete && (
+        <ConfirmDeleteDialog
+          paths={pendingDelete.paths}
+          permanent={pendingDelete.permanent}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={(dontAskAgain) => {
+            const job = pendingDelete;
+            setPendingDelete(null);
+            if (dontAskAgain && !job.permanent) setConfirmTrash(false);
+            performDelete(job.paneIndex, job.paths, job.permanent);
+          }}
+        />
+      )}
+
+      {conflictPrompt && (
+        <ConflictDialog
+          names={conflictPrompt.names}
+          mode={conflictPrompt.mode}
+          onChoose={(policy) => {
+            conflictPrompt.resolve(policy);
+            setConflictPrompt(null);
+          }}
         />
       )}
 

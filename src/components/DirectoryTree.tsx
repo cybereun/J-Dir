@@ -10,6 +10,14 @@ import { DriveInfo, FileEntry, QuickLinkItem } from "../types/jdir";
 import { apiListSubdirectories } from "../services/tauriApi";
 import { formatBytes } from "../utils/colorFilter";
 import {
+  DropMode,
+  dragIncludesDestination,
+  dropModeFor,
+  endDrag,
+  isJdirDrag,
+  readDrag,
+} from "../utils/dragDrop";
+import {
   Drive3DIcon,
   Folder3DIcon,
   MyPc3DIcon,
@@ -24,6 +32,7 @@ interface DirectoryTreeProps {
   activePaneIndex: number;
   showHidden: boolean;
   onSelectPath: (path: string) => void;
+  onDropItems?: (destPath: string, paths: string[], mode: DropMode) => void;
   compact?: boolean;
 }
 
@@ -38,6 +47,40 @@ interface TreeNodeProps {
   initialExpanded: boolean;
   expandSignal: { version: number; mode: "collapse-all" | "expand-drives" | "normal" };
   onSelectPath: (path: string) => void;
+  onDropItems?: (destPath: string, paths: string[], mode: DropMode) => void;
+}
+
+function makeTreeDropProps(
+  destPath: string,
+  onDropItems: DirectoryTreeProps["onDropItems"],
+  setDragOver: (v: boolean) => void,
+  afterDrop?: () => void
+) {
+  return {
+    onDragOver: (e: React.DragEvent) => {
+      if (!onDropItems || !isJdirDrag(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = dropModeFor(e, destPath);
+      setDragOver(true);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      e.stopPropagation();
+      setDragOver(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      if (!onDropItems) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOver(false);
+      const data = readDrag(e);
+      endDrag();
+      if (!data) return;
+      if (dragIncludesDestination(data.paths, destPath)) return;
+      onDropItems(destPath, data.paths, dropModeFor(e, destPath));
+      afterDrop?.();
+    },
+  };
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
@@ -51,7 +94,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   initialExpanded,
   expandSignal,
   onSelectPath,
+  onDropItems,
 }) => {
+  const [dragOver, setDragOver] = useState(false);
   const normalizedSelf = path.replace(/[\\/]+$/, "").toLowerCase();
   const normalizedActive = activePath.replace(/[\\/]+$/, "").toLowerCase();
   const isCurrent = normalizedSelf === normalizedActive;
@@ -116,6 +161,11 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     };
   }, [expanded, children, path, showHidden]);
 
+  const dropProps = makeTreeDropProps(path, onDropItems, setDragOver, () => {
+    // expand so the user can see where the item landed
+    setExpanded(true);
+  });
+
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     setExpanded((prev) => !prev);
@@ -134,7 +184,8 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   return (
     <div className="tree-node-wrapper">
       <div
-        className={`tree-node-row ${isCurrent ? "selected" : ""}`}
+        className={`tree-node-row ${isCurrent ? "selected" : ""} ${dragOver ? "drop-hover" : ""}`}
+        {...dropProps}
         style={{ paddingLeft: `${depth * 14 + 4}px` }}
         onClick={handleSelect}
         onDoubleClick={handleToggle}
@@ -183,10 +234,31 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 initialExpanded={false}
                 expandSignal={expandSignal}
                 onSelectPath={onSelectPath}
+                onDropItems={onDropItems}
               />
             ))}
         </div>
       )}
+    </div>
+  );
+};
+
+const QuickLinkRow: React.FC<{
+  ql: QuickLinkItem;
+  selected: boolean;
+  onSelectPath: (path: string) => void;
+  onDropItems?: DirectoryTreeProps["onDropItems"];
+}> = ({ ql, selected, onSelectPath, onDropItems }) => {
+  const [dragOver, setDragOver] = useState(false);
+  return (
+    <div
+      className={`tree-quicklink-row ${selected ? "selected" : ""} ${dragOver ? "drop-hover" : ""}`}
+      {...makeTreeDropProps(ql.targetPath, onDropItems, setDragOver)}
+      onClick={() => onSelectPath(ql.targetPath)}
+      title={ql.targetPath}
+    >
+      <QuickLink3DIcon label={ql.name} size={16} />
+      <span className="tree-node-label">{ql.name}</span>
     </div>
   );
 };
@@ -198,6 +270,7 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
   activePaneIndex,
   showHidden,
   onSelectPath,
+  onDropItems,
   compact = false,
 }) => {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -287,15 +360,13 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
                   ql.targetPath.replace(/[\\/]+$/, "").toLowerCase() ===
                   activePath.replace(/[\\/]+$/, "").toLowerCase();
                 return (
-                  <div
+                  <QuickLinkRow
                     key={ql.name + ql.targetPath}
-                    className={`tree-quicklink-row ${isSelected ? "selected" : ""}`}
-                    onClick={() => onSelectPath(ql.targetPath)}
-                    title={ql.targetPath}
-                  >
-                    <QuickLink3DIcon label={ql.name} size={16} />
-                    <span className="tree-node-label">{ql.name}</span>
-                  </div>
+                    ql={ql}
+                    selected={isSelected}
+                    onSelectPath={onSelectPath}
+                    onDropItems={onDropItems}
+                  />
                 );
               })}
           </div>
@@ -329,6 +400,7 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
                   initialExpanded={false}
                   expandSignal={expandSignal}
                   onSelectPath={onSelectPath}
+                  onDropItems={onDropItems}
                 />
               </div>
             ))}

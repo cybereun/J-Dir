@@ -2118,3 +2118,5 @@ body,
 .conflict-name-list { margin: 0; padding-left: 18px; font-size: 12px; max-height: 120px; overflow: auto; }
 .danger-btn { background: #dc2626 !important; border-color: #dc2626 !important; color: #fff !important; }
 .file-row.cursor-row, .file-card.cursor-row { outline: 1px dotted currentColor; outline-offset: -2px; }
+
+.drop-hover { outline: 2px solid #2563eb; outline-offset: -2px; background: rgba(37, 99, 235, 0.18) !important; }

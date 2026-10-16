@@ -55,6 +55,14 @@ import {
   resolveEntryColor,
   sortEntries,
 } from "../utils/colorFilter";
+import {
+  beginDrag,
+  dragIncludesDestination,
+  dropModeFor,
+  endDrag,
+  isJdirDrag,
+  readDrag,
+} from "../utils/dragDrop";
 import { DirectoryTree } from "./DirectoryTree";
 import {
   Drive3DIcon,
@@ -96,6 +104,7 @@ interface ExplorerPaneProps {
     paths: string[],
     mode: "copy" | "move"
   ) => void;
+  onDropToPath: (destDir: string, paths: string[], mode: "copy" | "move") => void;
   onDeletePaths: (paneIndex: number, paths: string[], permanent: boolean) => void;
   onAddQuickLink: (name: string, targetPath: string) => void;
   onEntriesLoaded?: (paneIndex: number, entries: FileEntry[]) => void;
@@ -132,6 +141,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   onCopySelectionToClipboard,
   onPasteFromClipboard,
   onTransferBetweenPanes,
+  onDropToPath,
   onDeletePaths,
   onAddQuickLink,
   onEntriesLoaded,
@@ -174,7 +184,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   } | null>(null);
 
   // Drag & Drop state
-  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [dropHover, setDropHover] = useState<string | null>(null);
 
   const loadDir = useCallback(async () => {
     const seq = ++loadSeqRef.current;
@@ -427,43 +437,39 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
     const dragPaths = pane.selectedPaths.includes(entry.path)
       ? pane.selectedPaths
       : [entry.path];
-    e.dataTransfer.setData(
-      "application/x-jdir-items",
-      JSON.stringify({
-        sourcePaneIndex: pane.index,
-        paths: dragPaths,
-      })
-    );
-    e.dataTransfer.effectAllowed = "copyMove";
+    beginDrag(e, pane.index, dragPaths);
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes("application/x-jdir-items")) {
+  /** Drop-target handlers for a folder path (pane body, folder rows, breadcrumbs, drives, "..") */
+  const dropHandlers = (destPath: string, key: string) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!isJdirDrag(e)) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = e.shiftKey ? "move" : "copy";
-      setIsDragOver(true);
-    }
-  };
-
-  const handleDragLeave = () => {
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const raw = e.dataTransfer.getData("application/x-jdir-items");
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as { sourcePaneIndex: number; paths: string[] };
-      if (parsed.paths && parsed.paths.length > 0) {
-        const mode = e.shiftKey ? "move" : "copy";
-        onTransferBetweenPanes(parsed.sourcePaneIndex, pane.index, parsed.paths, mode);
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = dropModeFor(e, destPath);
+      if (dropHover !== key) setDropHover(key);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      e.stopPropagation();
+      setDropHover((h) => (h === key ? null : h));
+    },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDropHover(null);
+      const data = readDrag(e);
+      endDrag();
+      if (!data) return;
+      if (dragIncludesDestination(data.paths, destPath)) {
+        onNotify("폴더를 자기 자신 또는 하위 폴더로 옮길 수 없습니다.", true);
+        return;
       }
-    } catch {
-      // ignore invalid payload
-    }
-  };
+      onFocusPane(pane.index);
+      onDropToPath(destPath, data.paths, dropModeFor(e, destPath));
+    },
+  });
+
+  const hoverClass = (key: string) => (dropHover === key ? "drop-hover" : "");
 
   // Pane-level keyboard navigation (active only for the focused pane while no dialog is open)
   useEffect(() => {
@@ -632,12 +638,10 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
     <section
       ref={sectionRef}
       className={`explorer-pane ${isFocused ? "focused-pane" : ""} ${
-        isDragOver ? "drag-over-pane" : ""
+        dropHover === "__pane__" ? "drag-over-pane" : ""
       }`}
       onMouseDown={() => onFocusPane(pane.index)}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      {...dropHandlers(currentPath, "__pane__")}
     >
       {/* 1. Multi-Tab & Pane Actions Bar */}
       <div className="pane-tabbar">
@@ -826,7 +830,8 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
                   {i > 0 && <span className="crumb-sep">›</span>}
                   <button
                     type="button"
-                    className="crumb-btn"
+                    className={`crumb-btn ${hoverClass("crumb:" + seg.fullPath)}`}
+                    {...dropHandlers(seg.fullPath, "crumb:" + seg.fullPath)}
                     onClick={(e) => {
                       e.stopPropagation();
                       onNavigate(pane.index, seg.fullPath, true);
@@ -935,7 +940,10 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
             <button
               key={drv.rootPath}
               type="button"
-              className={`drive-chip ${isCurrentDrive ? "active" : ""}`}
+              className={`drive-chip ${isCurrentDrive ? "active" : ""} ${hoverClass(
+                "drive:" + drv.rootPath
+              )}`}
+              {...dropHandlers(drv.rootPath, "drive:" + drv.rootPath)}
               onClick={() => onNavigate(pane.index, drv.rootPath, true)}
               title={`${drv.letter} ${drv.label} (${drv.driveType})\n여유: ${formatBytes(
                 drv.freeBytes
@@ -988,6 +996,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
               activePaneIndex={pane.index}
               showHidden={showHidden}
               onSelectPath={(p) => onNavigate(pane.index, p, true)}
+              onDropItems={onDropToPath}
               compact
             />
           </div>
@@ -1042,7 +1051,8 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
               <tbody>
                 {parentPath && (
                   <tr
-                    className="file-row parent-dir-row"
+                    className={`file-row parent-dir-row ${hoverClass("__up__")}`}
+                    {...dropHandlers(parentPath, "__up__")}
                     onDoubleClick={handleGoUp}
                     title="더블클릭하여 상위 폴더로 이동 (..)"
                   >
@@ -1072,9 +1082,11 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
                       data-idx={idx}
                       draggable={!isRenaming}
                       onDragStart={(e) => handleDragStart(e, entry)}
+                      onDragEnd={endDrag}
+                      {...(entry.isDir ? dropHandlers(entry.path, entry.path) : {})}
                       className={`file-row ${isSelected ? "selected" : ""} ${
                         entry.isHidden ? "hidden-entry" : ""
-                      }`}
+                      } ${entry.isDir ? hoverClass(entry.path) : ""}`}
                       onClick={(e) => handleItemClick(e, entry, idx)}
                       onDoubleClick={() => handleItemDoubleClick(entry)}
                       onContextMenu={(e) => {
@@ -1133,7 +1145,11 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
           ) : (
             <div className={`file-grid-view mode-${pane.viewMode}`}>
               {parentPath && (
-                <div className="file-card parent-card" onDoubleClick={handleGoUp}>
+                <div
+                  className={`file-card parent-card ${hoverClass("__up__")}`}
+                  {...dropHandlers(parentPath, "__up__")}
+                  onDoubleClick={handleGoUp}
+                >
                   <ParentFolder3DIcon size={pane.viewMode === "large-icons" ? 32 : 20} />
                   <span className="card-name">[..] 상위 폴더</span>
                 </div>
@@ -1152,7 +1168,11 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
                     data-idx={idx}
                     draggable
                     onDragStart={(e) => handleDragStart(e, entry)}
-                    className={`file-card ${isSelected ? "selected" : ""}`}
+                    onDragEnd={endDrag}
+                    {...(entry.isDir ? dropHandlers(entry.path, entry.path) : {})}
+                    className={`file-card ${isSelected ? "selected" : ""} ${
+                      entry.isDir ? hoverClass(entry.path) : ""
+                    }`}
                     onClick={(e) => handleItemClick(e, entry, idx)}
                     onDoubleClick={() => handleItemDoubleClick(entry)}
                     onContextMenu={(e) => {

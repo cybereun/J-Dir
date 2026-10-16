@@ -684,6 +684,18 @@ export const App: React.FC = () => {
     [panes, executeTransfer]
   );
 
+  const handleDropToPath = useCallback(
+    (destDir: string, paths: string[], mode: "copy" | "move") => {
+      executeTransfer(
+        paths,
+        destDir,
+        mode,
+        `${folderTitleFromPath(destDir)}(으)로 ${mode === "copy" ? "복사" : "이동"}`
+      );
+    },
+    [executeTransfer]
+  );
+
   const performDelete = useCallback(
     async (paneIndex: number, paths: string[], permanent: boolean) => {
       try {
@@ -1009,6 +1021,7 @@ export const App: React.FC = () => {
       onCopySelectionToClipboard={handleCopySelectionToClipboard}
       onPasteFromClipboard={handlePasteFromClipboard}
       onTransferBetweenPanes={handleTransferBetweenPanes}
+      onDropToPath={handleDropToPath}
       onDeletePaths={handleDeletePaths}
       onAddQuickLink={handleAddQuickLink}
       onEntriesLoaded={handleEntriesLoaded}
@@ -1301,6 +1314,7 @@ export const App: React.FC = () => {
                 activePaneIndex={activeFocus}
                 showHidden={showHidden}
                 onSelectPath={(path) => handleNavigate(activeFocus, path, true)}
+                onDropItems={handleDropToPath}
               />
             </div>
             <div

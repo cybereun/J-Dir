@@ -1,6 +1,6 @@
 [package]
 name = "j-dir"
-version = "1.0.1"
+version = "1.0.2"
 description = "J-Dir — The Quad Explorer for Windows"
 authors = ["J-Dir"]
 edition = "2021"

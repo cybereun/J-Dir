@@ -126,6 +126,10 @@ function renderEntryIcon(entry: FileEntry, _color?: string, size = 16) {
   return <EntryGraphic3DIcon entry={entry} size={size} />;
 }
 
+type ColKey = "name" | "size" | "type" | "date";
+const DEFAULT_COL_WIDTHS: Record<ColKey, number> = { name: 260, size: 90, type: 110, date: 140 };
+const MIN_COL_WIDTH = 40;
+
 export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   pane,
   isFocused,
@@ -183,6 +187,65 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   const typeAheadRef = useRef<{ buffer: string; timer: number | null }>({ buffer: "", timer: null });
 
   // Inline rename state
+  const [colWidths, setColWidths] = useState<Record<ColKey, number>>(() => {
+    try {
+      const raw = localStorage.getItem(`jdir-col-widths-${pane.index}`);
+      if (raw) {
+        const p = JSON.parse(raw);
+        const out = { ...DEFAULT_COL_WIDTHS };
+        for (const k of Object.keys(out) as ColKey[]) {
+          if (typeof p[k] === "number" && p[k] >= MIN_COL_WIDTH) out[k] = p[k];
+        }
+        return out;
+      }
+    } catch {
+      // ignore
+    }
+    return { ...DEFAULT_COL_WIDTHS };
+  });
+  const colWidthsRef = useRef(colWidths);
+  colWidthsRef.current = colWidths;
+
+  const startColResize = (e: React.MouseEvent, key: ColKey) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = colWidthsRef.current[key];
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(MIN_COL_WIDTH, startW + ev.clientX - startX);
+      setColWidths((prev) => ({ ...prev, [key]: w }));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.classList.remove("col-resizing");
+      try {
+        localStorage.setItem(
+          `jdir-col-widths-${pane.index}`,
+          JSON.stringify(colWidthsRef.current)
+        );
+      } catch {
+        // ignore
+      }
+    };
+    document.body.classList.add("col-resizing");
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const resetColWidth = (e: React.MouseEvent, key: ColKey) => {
+    e.stopPropagation();
+    setColWidths((prev) => {
+      const next = { ...prev, [key]: DEFAULT_COL_WIDTHS[key] };
+      try {
+        localStorage.setItem(`jdir-col-widths-${pane.index}`, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>("");
 
@@ -1059,29 +1122,67 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
               </button>
             </div>
           ) : pane.viewMode === "details" ? (
-            <table className="file-details-table">
+            <table
+              className="file-details-table"
+              style={{
+                width: colWidths.name + colWidths.size + colWidths.type + colWidths.date,
+                minWidth: "100%",
+              }}
+            >
+              <colgroup>
+                <col style={{ width: colWidths.name }} />
+                <col style={{ width: colWidths.size }} />
+                <col style={{ width: colWidths.type }} />
+                <col style={{ width: colWidths.date }} />
+                <col />
+              </colgroup>
               <thead>
                 <tr>
                   <th onClick={() => handleSortClick("name")} className="col-name">
                     <span>이름</span>
                     {pane.sortField === "name" &&
                       (pane.sortAsc ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
+                    <div
+                      className="col-resizer"
+                      onMouseDown={(e) => startColResize(e, "name")}
+                      onDoubleClick={(e) => resetColWidth(e, "name")}
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </th>
                   <th onClick={() => handleSortClick("size")} className="col-size">
                     <span>크기</span>
                     {pane.sortField === "size" &&
                       (pane.sortAsc ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
+                    <div
+                      className="col-resizer"
+                      onMouseDown={(e) => startColResize(e, "size")}
+                      onDoubleClick={(e) => resetColWidth(e, "size")}
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </th>
                   <th onClick={() => handleSortClick("fileType")} className="col-type">
                     <span>유형</span>
                     {pane.sortField === "fileType" &&
                       (pane.sortAsc ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
+                    <div
+                      className="col-resizer"
+                      onMouseDown={(e) => startColResize(e, "type")}
+                      onDoubleClick={(e) => resetColWidth(e, "type")}
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </th>
                   <th onClick={() => handleSortClick("modifiedMs")} className="col-date">
                     <span>수정한 날짜</span>
                     {pane.sortField === "modifiedMs" &&
                       (pane.sortAsc ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
+                    <div
+                      className="col-resizer"
+                      onMouseDown={(e) => startColResize(e, "date")}
+                      onDoubleClick={(e) => resetColWidth(e, "date")}
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </th>
+                  <th className="col-filler" />
                 </tr>
               </thead>
               <tbody>

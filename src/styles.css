@@ -896,17 +896,34 @@ body,
   color: var(--text-primary);
 }
 
-.col-name {
-  width: 48%;
+.file-details-table thead th {
+  overflow: hidden;
+  white-space: nowrap;
 }
-.col-size {
-  width: 15%;
+.file-details-table thead th.col-filler {
+  cursor: default;
+  padding: 0;
 }
-.col-type {
-  width: 17%;
+.file-details-table thead th.col-filler:hover {
+  background: var(--bg-elevated);
 }
-.col-date {
-  width: 20%;
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 3;
+}
+.col-resizer:hover {
+  background: var(--border-focus);
+  opacity: 0.5;
+}
+body.col-resizing,
+body.col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 .file-row {

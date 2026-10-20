@@ -4,7 +4,6 @@ import {
   Copy,
   Download,
   DownloadCloud,
-  ExternalLink,
   FileSpreadsheet,
   Import,
   Palette,
@@ -25,7 +24,7 @@ import {
   UpdateCheckResult,
 } from "../types/jdir";
 import { DEFAULT_QDIR_COLOR_RULES, formatBytes, formatDate } from "../utils/colorFilter";
-import { apiExportFileList, apiOpenItem } from "../services/tauriApi";
+import { apiExportFileList } from "../services/tauriApi";
 import { JDirBrand3DIcon, QuickLink3DIcon } from "./GraphicIcons";
 
 interface ColorFilterModalProps {
@@ -620,7 +619,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
             <div className="update-brand-meta">
               <h4>J-Dir — The Quad Explorer</h4>
               <p>
-                현재 버전: <strong>v{updateInfo?.currentVersion || "1.1.0"}</strong>
+                현재 버전: <strong>v{updateInfo?.currentVersion || "1.1.1"}</strong>
                 {updateInfo?.latestVersion && (
                   <>
                     {" "}
@@ -686,16 +685,6 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                 </div>
               ) : (
                 <div className="update-actions-row">
-                  {updateInfo.htmlUrl && (
-                    <button
-                      type="button"
-                      className="secondary-btn"
-                      onClick={() => apiOpenItem(updateInfo.htmlUrl)}
-                    >
-                      <ExternalLink size={13} />
-                      <span>GitHub 릴리즈 페이지</span>
-                    </button>
-                  )}
                   <button
                     type="button"
                     className="primary-btn"

@@ -1,4 +1,5 @@
 import React from "react";
+import pkg from "../../package.json";
 import {
   Columns2,
   Columns4,
@@ -99,10 +100,10 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
       {/* 1단: 상단 애플리케이션 메뉴 바 */}
       <div className="menubar-row-top">
         <div className="menubar-left">
-          <div className="app-brand" title="J-Dir v1.0.0 — The Quad Explorer">
+          <div className="app-brand" title={`J-Dir v${pkg.version} — The Quad Explorer`}>
             <JDirBrand3DIcon size={20} />
             <span className="brand-title">J-Dir</span>
-            <span className="brand-ver-tag">v1.0.0</span>
+            <span className="brand-ver-tag">v{pkg.version}</span>
             <span
               className={`brand-focus-pill pane-color-${activeFocus + 1}`}
               title="현재 포커스된 활성 패널"
@@ -152,7 +153,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
               title={
                 updateAvailable
                   ? `새 버전(${latestVersion}) 업데이트 가능! 클릭하여 설치`
-                  : "GitHub 최신 릴리즈 업데이트 확인 (v1.0.0)"
+                  : `GitHub 최신 릴리즈 업데이트 확인 (v${pkg.version})`
               }
             >
               <DownloadCloud size={13} />

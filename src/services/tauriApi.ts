@@ -388,9 +388,9 @@ export async function apiCheckForUpdates(): Promise<UpdateCheckResult> {
   if (!isTauriRuntime()) {
     return {
       updateAvailable: false,
-      currentVersion: "1.1.1",
-      latestVersion: "1.1.1",
-      releaseName: "J-Dir v1.1.1",
+      currentVersion: "1.1.2",
+      latestVersion: "1.1.2",
+      releaseName: "J-Dir v1.1.2",
       releaseNotes: "최신 버전을 사용 중입니다.",
       publishedAt: new Date().toISOString(),
       downloadUrl: "",

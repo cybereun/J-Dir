@@ -619,7 +619,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
             <div className="update-brand-meta">
               <h4>J-Dir — The Quad Explorer</h4>
               <p>
-                현재 버전: <strong>v{updateInfo?.currentVersion || "1.1.1"}</strong>
+                현재 버전: <strong>v{updateInfo?.currentVersion || "1.1.2"}</strong>
                 {updateInfo?.latestVersion && (
                   <>
                     {" "}

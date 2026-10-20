@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PanelLeftOpen } from "lucide-react";
 import {
   ClipboardState,
   ColorFilterRule,
@@ -235,6 +236,21 @@ const initialSession = loadSession();
 export const App: React.FC = () => {
   const [theme, setTheme] = useState<"dark" | "light">(initialSession?.theme ?? "light");
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(initialSession?.layoutMode ?? "4-grid");
+  const [treeCollapsed, setTreeCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("jdir-tree-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setTreeCollapsedPersist = (v: boolean) => {
+    setTreeCollapsed(v);
+    try {
+      localStorage.setItem("jdir-tree-collapsed", v ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  };
   const [treeMode, setTreeMode] = useState<number>(initialSession?.treeMode ?? 1); // 1 = Global tree, 0 = Per-pane tree, 2 = Off
   const [previewEnabled, setPreviewEnabled] = useState<boolean>(initialSession?.previewEnabled ?? false);
   const [useColorStart, setUseColorStart] = useState<boolean>(initialSession?.useColorStart ?? true);
@@ -1569,7 +1585,19 @@ export const App: React.FC = () => {
 
       <main className="jdir-main-workspace">
         {/* Global Single Tree (when tree_mode === 1) */}
-        {treeMode === 1 && (
+        {treeMode === 1 && treeCollapsed && (
+          <div className="tree-collapsed-rail">
+            <button
+              type="button"
+              className="icon-btn tree-collapse-btn"
+              onClick={() => setTreeCollapsedPersist(false)}
+              title="폴더 트리 열기"
+            >
+              <PanelLeftOpen size={16} />
+            </button>
+          </div>
+        )}
+        {treeMode === 1 && !treeCollapsed && (
           <>
             <div className="global-tree-dock" style={{ width: `${sptPct}%` }}>
               <DirectoryTree
@@ -1580,6 +1608,7 @@ export const App: React.FC = () => {
                 showHidden={showHidden}
                 onSelectPath={(path) => handleNavigate(activeFocus, path, true)}
                 onDropItems={handleDropToPath}
+                onCollapsePanel={() => setTreeCollapsedPersist(true)}
               />
             </div>
             <div

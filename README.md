@@ -7,7 +7,7 @@
 **Windows를 위한 고성능 4분할(Quad-Pane) 전문가용 파일 탐색기**
 
 [![Developer](https://img.shields.io/badge/Developer-Lebi__Cybereun-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/cybereun)
-[![Release](https://img.shields.io/badge/Release-v1.1.1-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.1.2-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/cybereun/J-Dir/releases)
 [![Tech Stack](https://img.shields.io/badge/Built%20With-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-f59e0b?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/cybereun/J-Dir)
 
@@ -67,6 +67,11 @@
 
 ---
 
+## v1.1.2 변경 사항
+
+- **폴더 트리 접기/펼치기**: 트리 헤더 새로고침 옆 아이콘으로 좌측 통합 트리를 닫고, 좌측 얇은 막대의 아이콘으로 다시 엽니다. (상태 저장)
+- 열 경계선 드래그가 동작하지 않던 문제를 수정했습니다.
+
 ## v1.1.1 변경 사항
 
 - **열 너비 조절**: 상세 보기의 모든 열 경계선을 마우스로 끌어 조절할 수 있습니다. (더블클릭하면 기본 너비로 복원, 패널별로 저장)
@@ -125,7 +130,7 @@
 
 ### 방법 1: 설치 프로그램(Installer)으로 설치 (권장)
 1. [**GitHub Releases 페이지**](https://github.com/cybereun/J-Dir/releases/latest)로 이동합니다.
-2. 최신 릴리즈의 **`J-Dir_1.1.1_x64-setup.exe`** 파일을 다운로드합니다.
+2. 최신 릴리즈의 **`J-Dir_1.1.2_x64-setup.exe`** 파일을 다운로드합니다.
 3. 다운로드한 설치 파일을 실행하면 Windows에 **J-Dir**가 설치되며 바탕화면 및 시작 메뉴 바로가기가 생성됩니다.
 4. 이후 새로운 버전이 GitHub에 릴리즈되면 앱 실행 시 자동으로 업데이트 알림창이 열리며 원클릭으로 업데이트됩니다.
 

@@ -4,6 +4,7 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  PanelLeftClose,
   RefreshCw,
 } from "lucide-react";
 import { DriveInfo, FileEntry, QuickLinkItem } from "../types/jdir";
@@ -34,6 +35,7 @@ interface DirectoryTreeProps {
   onSelectPath: (path: string) => void;
   onDropItems?: (destPath: string, paths: string[], mode: DropMode) => void;
   compact?: boolean;
+  onCollapsePanel?: () => void;
 }
 
 interface TreeNodeProps {
@@ -272,6 +274,7 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
   onSelectPath,
   onDropItems,
   compact = false,
+  onCollapsePanel,
 }) => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [quickLinksExpanded, setQuickLinksExpanded] = useState(true);
@@ -335,6 +338,16 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
           >
             <RefreshCw size={12} />
           </button>
+          {onCollapsePanel && (
+            <button
+              type="button"
+              className="icon-btn tree-collapse-btn"
+              onClick={onCollapsePanel}
+              title="폴더 트리 닫기"
+            >
+              <PanelLeftClose size={14} />
+            </button>
+          )}
         </div>
       </div>
 

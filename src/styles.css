@@ -897,7 +897,6 @@ body,
 }
 
 .file-details-table thead th {
-  overflow: hidden;
   white-space: nowrap;
 }
 .file-details-table thead th.col-filler {
@@ -910,8 +909,8 @@ body,
 .col-resizer {
   position: absolute;
   top: 0;
-  right: -3px;
-  width: 7px;
+  right: -1px;
+  width: 8px;
   height: 100%;
   cursor: col-resize;
   z-index: 3;
@@ -2178,3 +2177,20 @@ body.col-resizing * {
 .props-grid dd { margin: 0; word-break: break-all; }
 .props-attrs { display: flex; gap: 16px; }
 .props-check { display: inline-flex; align-items: center; gap: 5px; }
+
+.tree-collapse-btn {
+  color: var(--accent-primary);
+}
+.tree-collapse-btn:hover {
+  background: var(--bg-hover);
+}
+.tree-collapsed-rail {
+  flex: none;
+  width: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 6px;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border-subtle);
+}

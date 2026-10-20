@@ -30,6 +30,13 @@
     "targets": [
       "nsis"
     ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "sidebarImage": "installer/sidebar.bmp",
+        "headerImage": "installer/header.bmp"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

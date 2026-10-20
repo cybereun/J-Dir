@@ -408,15 +408,13 @@ body,
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
-  height: 32px;
   min-height: 32px;
-  max-height: 32px;
-  padding: 0 8px;
+  padding: 3px 8px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-elevated);
   font-size: 11.5px;
   font-weight: 600;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   white-space: nowrap;
   overflow: hidden;
   flex-shrink: 0;

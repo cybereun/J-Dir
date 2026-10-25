@@ -10,6 +10,7 @@ import { ImageView } from "./preview/ImageView";
 import { AudioView } from "./preview/AudioView";
 import { VideoView } from "./preview/VideoView";
 import { ZipView } from "./preview/ZipView";
+import { SearchTab } from "./search/SearchTab";
 
 interface PreviewPanelProps {
   selectedEntry: FileEntry | null;
@@ -38,6 +39,21 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ selectedEntry, mode,
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [showHexTab, setShowHexTab] = useState<boolean>(false);
+  const [topTab, setTopTab] = useState<"preview" | "search">(() => {
+    try {
+      return localStorage.getItem("jdir.previewTopTab") === "search" ? "search" : "preview";
+    } catch {
+      return "preview";
+    }
+  });
+  const switchTab = (tab: "preview" | "search") => {
+    setTopTab(tab);
+    try {
+      localStorage.setItem("jdir.previewTopTab", tab);
+    } catch {
+      /* storage unavailable */
+    }
+  };
 
   const kind = selectedEntry && !selectedEntry.isDir ? previewKindOf(selectedEntry.name) : "other";
 
@@ -132,7 +148,18 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ selectedEntry, mode,
         </div>
       </div>
 
-      {!selectedEntry ? (
+      <div className="preview-top-tabs">
+        <button type="button" className={topTab === "preview" ? "active" : ""} onClick={() => switchTab("preview")}>
+          미리보기
+        </button>
+        <button type="button" className={topTab === "search" ? "active" : ""} onClick={() => switchTab("search")}>
+          검색
+        </button>
+      </div>
+
+      {topTab === "search" ? (
+        <SearchTab />
+      ) : !selectedEntry ? (
         <div className="preview-empty">
           <Folder3DIcon size={38} open />
           <p>파일이나 폴더를 클릭하면 즉시 내용을 미리 봅니다.</p>

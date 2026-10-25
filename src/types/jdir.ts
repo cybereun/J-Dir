@@ -287,3 +287,52 @@ export interface ZipListing {
   totalCompressed: number;
   truncated: boolean;
 }
+
+export interface IndexFolder {
+  id: number;
+  path: string;
+  docCount: number;
+  errorCount: number;
+  lastIndexedMs: number | null;
+}
+
+export interface IndexProgress {
+  running: boolean;
+  phase: string;
+  folderPath: string;
+  total: number;
+  done: number;
+  errors: number;
+  current: string;
+  cancelled: boolean;
+  finished: boolean;
+  message: string;
+}
+
+export interface SearchRequestDto {
+  text: string;
+  mode: "keyword" | "filename";
+  exts: string[];
+  folderId: number | null;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SearchHit {
+  id: number;
+  folderId: number;
+  path: string;
+  name: string;
+  ext: string;
+  size: number;
+  mtimeMs: number;
+  status: string;
+  snippet: string;
+}
+
+export interface SearchResponse {
+  hits: SearchHit[];
+  total: number;
+  elapsedMs: number;
+  tokens: string[];
+}

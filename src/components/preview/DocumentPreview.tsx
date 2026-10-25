@@ -13,22 +13,25 @@ interface DocumentPreviewProps {
   entry: FileEntry;
   /** pdf/hwp/hwpx can show the original layout; other office formats show parsed text only. */
   hasLayout: boolean;
+  /** Open on the parsed-text tab (used by search results so matches are visible). */
+  startMode?: Mode;
+  highlight?: string;
 }
 
-export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ entry, hasLayout }) => {
+export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ entry, hasLayout, startMode, highlight }) => {
   const ext = fileExt(entry.name);
-  const [mode, setMode] = useState<Mode>(hasLayout ? "layout" : "text");
+  const [mode, setMode] = useState<Mode>(startMode ?? (hasLayout ? "layout" : "text"));
   const [doc, setDoc] = useState<ParsedDocument | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [layoutNote, setLayoutNote] = useState<string | null>(null);
 
   useEffect(() => {
-    setMode(hasLayout ? "layout" : "text");
+    setMode(startMode ?? (hasLayout ? "layout" : "text"));
     setDoc(null);
     setParseError(null);
     setLayoutNote(null);
-  }, [entry.path, entry.modifiedMs, hasLayout]);
+  }, [entry.path, entry.modifiedMs, hasLayout, startMode]);
 
   const needText = mode === "text";
   useEffect(() => {
@@ -93,7 +96,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ entry, hasLayo
               </div>
             )}
             {parseError && <div className="preview-message preview-message--error">{parseError}</div>}
-            {!parsing && doc && <DocumentTextView doc={doc} />}
+            {!parsing && doc && <DocumentTextView doc={doc} highlight={highlight} />}
           </>
         )}
       </div>

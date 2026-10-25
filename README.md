@@ -183,6 +183,26 @@ npm run tauri dev
 npm run tauri build
 ```
 
+> **빌드 요구 사항 (검색 색인 기능)**: 암호화 색인 DB(SQLCipher)가 OpenSSL을 소스에서 빌드하므로
+> **Windows용 Perl(Strawberry Perl)** 이 PATH에 있어야 하고(Git에 포함된 Perl은 사용할 수 없음),
+> OpenSSL의 어셈블러가 한글 경로를 읽지 못하므로 `CARGO_TARGET_DIR`을 **한글이 없는 경로**로 지정하세요.
+> 또한 문서 파서 실행 파일을 `src-tauri/resources/jdir-parser.exe`에 두어야 합니다(저장소에는 포함되지 않음).
+
+---
+
+## 오픈소스 사용 고지 (Open-Source Notices)
+
+J-Dir의 문서 미리보기 기능은 다음 오픈소스 프로젝트를 사용합니다. 각 프로젝트의 저작권과 라이선스는 원 저작자에게 있습니다.
+
+| 구성 요소 | 저작권자 | 라이선스 | 용도 |
+|---|---|---|---|
+| [kordoc](https://github.com/chrisryugj/kordoc) | chrisryugj | MIT | HWP/HWPX/PDF/Office 문서 텍스트·표 파싱 |
+| [rhwp](https://github.com/edwardkim/rhwp) (`@rhwp/core`) | Edward Kim | MIT | HWP/HWPX 원본 레이아웃 렌더링 |
+| [PDF.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) | Mozilla Foundation | Apache-2.0 | PDF 원본 레이아웃 렌더링 |
+
+kordoc은 OpenDataLoader PDF(Hancom, Apache-2.0)와 hml-equation-parser(Open Bapul, Apache-2.0)에서 파생된 코드를 포함하며, 문서 파서는 cfb·JSZip 등의 라이브러리와 함께 `jdir-parser.exe`로 묶여 배포됩니다.
+라이선스 전문과 전체 목록은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 확인하세요.
+
 ---
 
 ## 개발자 정보 (Developer)

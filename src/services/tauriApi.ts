@@ -9,6 +9,10 @@ import {
   FilePreviewData,
   ParsedDocument,
   ZipListing,
+  IndexFolder,
+  IndexProgress,
+  SearchRequestDto,
+  SearchResponse,
   FolderSizeStats,
   JobProgressEvent,
   PathPair,
@@ -408,6 +412,38 @@ export async function apiReadFileBytes(path: string, maxBytes?: number): Promise
     ? await invoke<ArrayBuffer>("cmd_zip_read_entry", { path: zip.zipPath, index: zip.index })
     : await invoke<ArrayBuffer>("cmd_read_file_bytes", { path, maxBytes: maxBytes ?? null });
   return new Uint8Array(buf);
+}
+
+export async function apiIndexFolders(): Promise<IndexFolder[]> {
+  return invoke<IndexFolder[]>("cmd_index_folders");
+}
+
+export async function apiIndexAddFolder(path: string): Promise<number> {
+  return invoke<number>("cmd_index_add_folder", { path });
+}
+
+export async function apiIndexRemoveFolder(id: number): Promise<void> {
+  return invoke<void>("cmd_index_remove_folder", { id });
+}
+
+export async function apiIndexStart(folderId: number | null): Promise<void> {
+  return invoke<void>("cmd_index_start", { folderId });
+}
+
+export async function apiIndexCancel(): Promise<void> {
+  return invoke<void>("cmd_index_cancel");
+}
+
+export async function apiIndexProgress(): Promise<IndexProgress> {
+  return invoke<IndexProgress>("cmd_index_progress");
+}
+
+export async function apiIndexSearch(request: SearchRequestDto): Promise<SearchResponse> {
+  return invoke<SearchResponse>("cmd_index_search", { request });
+}
+
+export function onIndexProgress(handler: (p: IndexProgress) => void): Promise<() => void> {
+  return listen<IndexProgress>("jdir://index-progress", (ev) => handler(ev.payload));
 }
 
 export async function apiZipList(path: string): Promise<ZipListing> {

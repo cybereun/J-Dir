@@ -731,7 +731,22 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
       className={`explorer-pane ${isFocused ? "focused-pane" : ""} ${
         dropHover === "__pane__" ? "drag-over-pane" : ""
       }`}
-      onMouseDown={() => onFocusPane(pane.index)}
+      onMouseDown={(e) => {
+        onFocusPane(pane.index);
+        if (e.button === 3 || e.button === 4) e.preventDefault();
+      }}
+      onMouseUp={(e) => {
+        if (e.button === 3) {
+          e.preventDefault();
+          if (activeTab && activeTab.historyIndex > 0) onHistoryBack(pane.index);
+        } else if (e.button === 4) {
+          e.preventDefault();
+          if (activeTab && activeTab.historyIndex < activeTab.history.length - 1) onHistoryForward(pane.index);
+        }
+      }}
+      onAuxClick={(e) => {
+        if (e.button === 3 || e.button === 4) e.preventDefault();
+      }}
       {...dropHandlers(currentPath, "__pane__")}
     >
       {/* 1. Multi-Tab & Pane Actions Bar */}

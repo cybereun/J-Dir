@@ -98,3 +98,16 @@ export function pagingKeyHandler(page: number, pageCount: number, onPage: (p: nu
     }
   };
 }
+
+/** Mouse Back / Forward buttons flip pages in the page-based viewers. */
+export function pagingMouseHandler(page: number, pageCount: number, onPage: (p: number) => void) {
+  return (e: React.MouseEvent) => {
+    if (e.button === 3) {
+      e.preventDefault();
+      onPage(Math.max(1, page - 1));
+    } else if (e.button === 4) {
+      e.preventDefault();
+      onPage(Math.min(pageCount, page + 1));
+    }
+  };
+}

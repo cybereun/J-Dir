@@ -9,6 +9,7 @@ pub mod preview;
 pub mod qdir_compat;
 pub mod search;
 pub mod updater;
+pub mod zipview;
 
 use jobs::Reporter;
 use models::{
@@ -200,6 +201,30 @@ fn cmd_allow_preview_stream(app: AppHandle, path: String) -> Result<(), String> 
     app.asset_protocol_scope()
         .allow_file(p)
         .map_err(|e| format!("스트리밍 허용 실패: {}", e))
+}
+
+#[tauri::command(async)]
+fn cmd_zip_list(path: String) -> Result<zipview::ZipListing, String> {
+    zipview::list_zip(&path)
+}
+
+#[tauri::command(async)]
+fn cmd_zip_read_entry(path: String, index: usize) -> Result<tauri::ipc::Response, String> {
+    zipview::read_entry(&path, index).map(tauri::ipc::Response::new)
+}
+
+#[tauri::command(async)]
+fn cmd_zip_parse_entry(app: AppHandle, path: String, index: usize) -> Result<serde_json::Value, String> {
+    let mut doc = zipview::parse_entry(&path, index, app.path().resource_dir().ok())?;
+    if let Some(obj) = doc.as_object_mut() {
+        obj.remove("markdown");
+    }
+    Ok(doc)
+}
+
+#[tauri::command(async)]
+fn cmd_zip_extract(path: String, dest_dir: String, indices: Option<Vec<usize>>) -> Result<String, String> {
+    zipview::extract(&path, &dest_dir, indices)
 }
 
 const PREVIEW_WINDOW: &str = "preview";
@@ -397,6 +422,10 @@ pub fn run() {
             cmd_read_file_bytes,
             cmd_parse_document,
             cmd_allow_preview_stream,
+            cmd_zip_list,
+            cmd_zip_read_entry,
+            cmd_zip_parse_entry,
+            cmd_zip_extract,
             cmd_open_preview_window,
             cmd_close_preview_window,
             cmd_check_for_updates,

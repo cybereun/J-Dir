@@ -268,3 +268,22 @@ export interface ParsedDocument {
   blocks: DocBlock[];
   warnings: { code: string; message: string; page?: number }[];
 }
+
+export interface ZipEntryInfo {
+  index: number;
+  name: string;
+  isDir: boolean;
+  size: number;
+  compressed: number;
+  modified: string | null;
+  encrypted: boolean;
+}
+
+export interface ZipListing {
+  entries: ZipEntryInfo[];
+  totalEntries: number;
+  totalFiles: number;
+  totalSize: number;
+  totalCompressed: number;
+  truncated: boolean;
+}

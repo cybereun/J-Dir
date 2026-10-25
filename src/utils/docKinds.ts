@@ -34,6 +34,9 @@ const AUDIO_MIME: Record<string, string> = {
 /** Video containers; mp4(H.264)/webm usually play in WebView2, the rest is attempted. */
 const VIDEO_EXTS = new Set(["mp4", "m4v", "webm", "mov", "mkv", "avi", "wmv", "ogv"]);
 
+/** zip-structured archives whose listing and entries can be previewed. */
+const ARCHIVE_EXTS = new Set(["zip", "jar", "apk", "war", "aar"]);
+
 /** Formats that have an original-layout renderer (and a parsed-text view). */
 const LAYOUT_DOCS = new Set(["pdf", "hwp", "hwpx"]);
 
@@ -42,7 +45,7 @@ const TEXT_DOCS = new Set([
   "doc", "docx", "xls", "xlsx", "xlsm", "ppt", "pptx", "odt", "ods", "odp", "rtf", "hwpml",
 ]);
 
-export type PreviewFileKind = "image" | "audio" | "video" | "layout-doc" | "text-doc" | "other";
+export type PreviewFileKind = "image" | "audio" | "video" | "archive" | "layout-doc" | "text-doc" | "other";
 
 export function fileExt(name: string): string {
   const i = name.lastIndexOf(".");
@@ -62,6 +65,7 @@ export function previewKindOf(name: string): PreviewFileKind {
   if (IMAGE_MIME[ext]) return "image";
   if (AUDIO_MIME[ext]) return "audio";
   if (VIDEO_EXTS.has(ext)) return "video";
+  if (ARCHIVE_EXTS.has(ext)) return "archive";
   if (LAYOUT_DOCS.has(ext)) return "layout-doc";
   if (TEXT_DOCS.has(ext)) return "text-doc";
   return "other";

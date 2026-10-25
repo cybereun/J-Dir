@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { apiReadFileBytes } from "../../services/tauriApi";
-import { PageToolbar, pagingKeyHandler } from "./PageToolbar";
+import { PageToolbar, pagingKeyHandler, pagingMouseHandler } from "./PageToolbar";
 import { usePanScroll } from "./usePanScroll";
 
 const MAX_CANVAS_DIMENSION = 8192;
@@ -175,7 +175,7 @@ export const PdfLayoutView: React.FC<{ path: string }> = ({ path }) => {
   };
 
   return (
-    <div className="layout-view" ref={container} tabIndex={0} onKeyDown={pagingKeyHandler(page, doc.numPages, goto)}>
+    <div className="layout-view" ref={container} tabIndex={0} onKeyDown={pagingKeyHandler(page, doc.numPages, goto)} onMouseUp={pagingMouseHandler(page, doc.numPages, goto)}>
       <PageToolbar
         page={page}
         pageCount={doc.numPages}

@@ -9,6 +9,7 @@ import { DocumentPreview } from "./preview/DocumentPreview";
 import { ImageView } from "./preview/ImageView";
 import { AudioView } from "./preview/AudioView";
 import { VideoView } from "./preview/VideoView";
+import { ZipView } from "./preview/ZipView";
 
 interface PreviewPanelProps {
   selectedEntry: FileEntry | null;
@@ -76,7 +77,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ selectedEntry, mode,
   useEffect(() => {
     setPreviewData(null);
     setError(null);
-    if (!selectedEntry || kind === "image" || kind === "audio" || kind === "video" || kind === "layout-doc" || kind === "text-doc") {
+    if (!selectedEntry || kind === "image" || kind === "audio" || kind === "video" || kind === "archive" || kind === "layout-doc" || kind === "text-doc") {
       setLoading(false);
       return;
     }
@@ -105,7 +106,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ selectedEntry, mode,
 
   return (
     <aside
-      className={`preview-panel ${isDock ? "docked" : "windowed"}`}
+      className={`preview-panel ${isDock ? "docked" : "windowed"}${kind === "archive" ? " is-archive" : ""}`}
       style={isDock ? { width: dockWidth } : undefined}
     >
       {isDock && <div className="preview-dock-handle" onPointerDown={beginResize} title="드래그하여 폭 조절" />}
@@ -157,6 +158,12 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ selectedEntry, mode,
           {kind === "image" && (
             <div className="preview-viewer-body no-pad">
               <ImageView path={selectedEntry.path} name={selectedEntry.name} />
+            </div>
+          )}
+
+          {kind === "archive" && (
+            <div className="preview-viewer-body no-pad">
+              <ZipView entry={selectedEntry} />
             </div>
           )}
 

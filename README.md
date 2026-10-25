@@ -7,7 +7,7 @@
 **Windows를 위한 고성능 4분할(Quad-Pane) 전문가용 파일 탐색기**
 
 [![Developer](https://img.shields.io/badge/Developer-Lebi__Cybereun-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/cybereun)
-[![Release](https://img.shields.io/badge/Release-v1.1.6-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.1.7-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/cybereun/J-Dir/releases)
 [![Tech Stack](https://img.shields.io/badge/Built%20With-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-f59e0b?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/cybereun/J-Dir)
 
@@ -58,6 +58,7 @@
 - **문서 원본 레이아웃**: PDF·HWP·HWPX를 원본 모양 그대로 페이지 단위로 보여주며, 이전/다음 버튼·페이지 번호 입력·방향키로 모든 페이지를 넘겨볼 수 있습니다.
 - **문서 텍스트 보기**: HWP/HWPX/PDF/DOC/DOCX/XLS/XLSX/PPT/PPTX/ODT/ODS/RTF를 파싱(kordoc)하여 표와 함께 텍스트로 보여주고, 드래그 선택·전체 복사·문서 내 찾기를 지원합니다.
 - **음악·동영상 재생**: mp3/wav/m4a/ogg/flac 등 음악과 mp4/webm/mov 등 동영상을 미리보기 창에서 바로 재생합니다. 파일을 메모리에 올리지 않고 스트리밍하므로 용량 제한이 없습니다(코덱은 WebView2 지원 범위).
+- **압축 파일(zip) 미리보기**: zip·jar·apk 안의 파일 목록(크기·압축률·수정일)을 보여주고, 압축을 풀지 않고 항목을 클릭해 이미지·텍스트·PDF·HWP·DOC/XLS 등을 바로 볼 수 있습니다. 전체 풀기/선택한 항목만 풀기도 지원합니다.
 - **드래그 이동**: 확대한 문서·이미지를 마우스로 잡아 끌어 이동할 수 있습니다(PDF 글자 위는 Space 키 또는 ✋ 버튼).
 - **사이드바 ↔ 팝업 창**: 미리보기는 기본 사이드바이며, 버튼 한 번으로 별도 창으로 분리되어 바탕화면 어디든 옮기고 크기를 조절할 수 있습니다. 다시 누르면 사이드바로 돌아옵니다.
 - **화면 배율 & 돋보기 (Lupe)**: 상단 줌 컨트롤(`85%~150%`) 및 플로팅 돋보기 HUD를 통해 선택된 항목 정보를 크게 확인할 수 있습니다.
@@ -71,6 +72,11 @@
 - **`지금 업데이트 설치 및 재시작`** 클릭 한 번으로 최신 설치 파일을 다운로드·설치한 후 앱을 자동으로 재시작합니다. (상단 타이틀 옆 `UP` 아이콘 버튼으로 수동 확인도 가능)
 
 ---
+
+## v1.1.7 변경 사항
+- **압축 파일 미리보기**: zip 계열 파일의 목록 보기, 압축을 풀지 않고 내부 파일 미리보기, 전체/선택 항목 압축 풀기(풀기 전 대상 폴더 확인, 다른 위치 선택 가능).
+- **마우스 뒤로/앞으로 버튼**: 마우스 옆 버튼(뒤로·앞으로)으로 패널의 폴더 이동 기록을 오갈 수 있고, PDF·HWP 미리보기에서는 이전/다음 페이지로 넘어갑니다.
+- 암호화된 항목은 목록만 표시하고 미리보기는 안내 문구로 대체됩니다. 압축 안의 음악·동영상은 미리보지 않습니다.
 
 ## v1.1.6 변경 사항
 - **음악·동영상 미리보기**: 파일을 스트리밍 방식으로 재생(용량 제한 없음). 지원하지 않는 형식/코덱은 안내 문구를 표시합니다.

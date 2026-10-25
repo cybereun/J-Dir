@@ -109,7 +109,7 @@ pub fn zip_items(sources: Vec<String>, dest_zip: String, rep: &Reporter) -> Resu
     }
 }
 
-fn decode_entry_name(raw: &[u8]) -> String {
+pub fn decode_entry_name(raw: &[u8]) -> String {
     match std::str::from_utf8(raw) {
         Ok(s) => s.to_string(),
         // Legacy Korean zips store CP949 names without the UTF-8 flag.
@@ -137,6 +137,16 @@ fn safe_relative(name: &str) -> Option<PathBuf> {
 
 /// Extracts a zip into a new folder named after the archive inside `dest_dir`. Returns the folder.
 pub fn unzip_archive(zip_path: String, dest_dir: String, rep: &Reporter) -> Result<String, String> {
+    unzip_selected(zip_path, dest_dir, None, rep)
+}
+
+/// Like [`unzip_archive`], optionally limited to the entries whose index is in `only`.
+pub fn unzip_selected(
+    zip_path: String,
+    dest_dir: String,
+    only: Option<&std::collections::HashSet<usize>>,
+    rep: &Reporter,
+) -> Result<String, String> {
     let zip_p = PathBuf::from(&zip_path);
     let dest_parent = normalize_windows_path(&dest_dir);
     if !dest_parent.is_dir() {
@@ -151,18 +161,30 @@ pub fn unzip_archive(zip_path: String, dest_dir: String, rep: &Reporter) -> Resu
     let file = File::open(&zip_p).map_err(|e| format!("압축 파일 열기 실패: {}", e))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("올바른 zip 파일이 아닙니다: {}", e))?;
 
+    let wanted = |i: usize| only.map_or(true, |set| set.contains(&i));
+    if only.map_or(false, |set| set.is_empty()) {
+        return Err("풀 항목이 선택되지 않았습니다.".to_string());
+    }
     let mut total = 0u64;
+    let mut count = 0u64;
     for i in 0..archive.len() {
-        if let Ok(f) = archive.by_index(i) {
+        if !wanted(i) {
+            continue;
+        }
+        if let Ok(f) = archive.by_index_raw(i) {
             total += f.size();
+            count += 1;
         }
     }
-    rep.set_totals(total, archive.len() as u64);
+    rep.set_totals(total, count);
     fs::create_dir_all(&out_dir).map_err(|e| format!("폴더 생성 실패: {}", e))?;
 
     let result = (|| -> Result<(), String> {
         let mut buf = vec![0u8; 256 * 1024];
         for i in 0..archive.len() {
+            if !wanted(i) {
+                continue;
+            }
             if rep.is_cancelled() {
                 return Err(CANCELLED.to_string());
             }

@@ -8,6 +8,7 @@ import {
   FileEntry,
   FilePreviewData,
   ParsedDocument,
+  ZipListing,
   FolderSizeStats,
   JobProgressEvent,
   PathPair,
@@ -385,9 +386,36 @@ export async function apiReadFilePreview(
   return invoke<FilePreviewData>("cmd_read_file_preview", { path, maxBytes });
 }
 
+const ZIP_URI = "zip://";
+
+/** Virtual path for one entry inside a zip: `zip://<index>/<zip path>`. */
+export function zipEntryUri(zipPath: string, index: number): string {
+  return `${ZIP_URI}${index}/${zipPath}`;
+}
+
+function parseZipUri(path: string): { zipPath: string; index: number } | null {
+  if (!path.startsWith(ZIP_URI)) return null;
+  const rest = path.slice(ZIP_URI.length);
+  const slash = rest.indexOf("/");
+  const index = Number(rest.slice(0, slash));
+  if (slash < 0 || !Number.isInteger(index)) return null;
+  return { zipPath: rest.slice(slash + 1), index };
+}
+
 export async function apiReadFileBytes(path: string, maxBytes?: number): Promise<Uint8Array> {
-  const buf = await invoke<ArrayBuffer>("cmd_read_file_bytes", { path, maxBytes: maxBytes ?? null });
+  const zip = parseZipUri(path);
+  const buf = zip
+    ? await invoke<ArrayBuffer>("cmd_zip_read_entry", { path: zip.zipPath, index: zip.index })
+    : await invoke<ArrayBuffer>("cmd_read_file_bytes", { path, maxBytes: maxBytes ?? null });
   return new Uint8Array(buf);
+}
+
+export async function apiZipList(path: string): Promise<ZipListing> {
+  return invoke<ZipListing>("cmd_zip_list", { path });
+}
+
+export async function apiZipExtract(path: string, destDir: string, indices: number[] | null): Promise<string> {
+  return invoke<string>("cmd_zip_extract", { path, destDir, indices });
 }
 
 /** URL the WebView can stream (Range requests) for audio/video; only this one file is made readable. */
@@ -397,6 +425,8 @@ export async function apiStreamUrl(path: string): Promise<string> {
 }
 
 export async function apiParseDocument(path: string): Promise<ParsedDocument> {
+  const zip = parseZipUri(path);
+  if (zip) return invoke<ParsedDocument>("cmd_zip_parse_entry", { path: zip.zipPath, index: zip.index });
   return invoke<ParsedDocument>("cmd_parse_document", { path });
 }
 

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import initRhwp, { HwpDocument } from "@rhwp/core";
 import wasmUrl from "@rhwp/core/rhwp_bg.wasm?url";
 import { apiReadFileBytes } from "../../services/tauriApi";
-import { PageToolbar, pagingKeyHandler } from "./PageToolbar";
+import { PageToolbar, pagingKeyHandler, pagingMouseHandler } from "./PageToolbar";
 import { usePanScroll } from "./usePanScroll";
 
 let rhwpReady: Promise<unknown> | null = null;
@@ -136,7 +136,7 @@ export const HwpLayoutView: React.FC<HwpLayoutViewProps> = ({ path, onUnsupporte
   };
 
   return (
-    <div className="layout-view" tabIndex={0} onKeyDown={pagingKeyHandler(page, pageCount, goto)}>
+    <div className="layout-view" tabIndex={0} onKeyDown={pagingKeyHandler(page, pageCount, goto)} onMouseUp={pagingMouseHandler(page, pageCount, goto)}>
       <PageToolbar
         page={page}
         pageCount={pageCount}

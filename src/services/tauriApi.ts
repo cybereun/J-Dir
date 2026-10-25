@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import {
   ClipboardFiles,
   ConflictPolicy,
@@ -412,6 +412,15 @@ export async function apiReadFileBytes(path: string, maxBytes?: number): Promise
     ? await invoke<ArrayBuffer>("cmd_zip_read_entry", { path: zip.zipPath, index: zip.index })
     : await invoke<ArrayBuffer>("cmd_read_file_bytes", { path, maxBytes: maxBytes ?? null });
   return new Uint8Array(buf);
+}
+
+/** Asks the main window to show `path` (navigate the active pane to its folder and select it). */
+export async function apiRevealInPane(path: string): Promise<void> {
+  await emit("jdir://reveal-file", { path });
+}
+
+export async function apiFocusMainWindow(): Promise<void> {
+  await invoke("cmd_focus_main_window");
 }
 
 export async function apiIndexFolders(): Promise<IndexFolder[]> {

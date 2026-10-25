@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Binary, Eye, ExternalLink, FileText, PanelRight, RefreshCw, X } from "lucide-react";
+import { Binary, ExternalLink, FileText, PanelRight, RefreshCw, X } from "lucide-react";
 import { FileEntry, FilePreviewData } from "../types/jdir";
 import { apiReadFilePreview } from "../services/tauriApi";
 import { formatBytes, formatDate } from "../utils/colorFilter";
 import { previewKindOf } from "../utils/docKinds";
-import { EntryGraphic3DIcon, Folder3DIcon } from "./GraphicIcons";
+import { EntryGraphic3DIcon, Folder3DIcon, Preview3DIcon, Search3DIcon } from "./GraphicIcons";
 import { DocumentPreview } from "./preview/DocumentPreview";
 import { ImageView } from "./preview/ImageView";
 import { AudioView } from "./preview/AudioView";
@@ -128,7 +128,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ selectedEntry, mode,
       {isDock && <div className="preview-dock-handle" onPointerDown={beginResize} title="드래그하여 폭 조절" />}
       <div className="preview-header">
         <div className="preview-title">
-          <Eye size={14} />
+          <Preview3DIcon size={20} />
           <span>미리보기</span>
         </div>
         <div className="preview-header-actions">
@@ -153,6 +153,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ selectedEntry, mode,
           미리보기
         </button>
         <button type="button" className={topTab === "search" ? "active" : ""} onClick={() => switchTab("search")}>
+          <Search3DIcon size={15} />
           검색
         </button>
       </div>

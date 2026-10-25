@@ -1,5 +1,6 @@
-//! A long-lived document-parser process: one spawn serves many files, which is what makes
-//! indexing thousands of documents practical (spawning the 100MB host per file would not be).
+//! Resident document-parser processes. One spawn serves many files, which is what makes indexing
+//! thousands of documents practical. The parser host is single-threaded JavaScript, so concurrent
+//! requests to ONE process do not run in parallel; speed comes from running several processes.
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -22,7 +23,8 @@ struct Proc {
     stdin: ChildStdin,
 }
 
-pub struct ParserPool {
+/// One parser process, started lazily and restarted if it dies or hangs.
+struct ParserHost {
     program: PathBuf,
     proc: Mutex<Option<Proc>>,
     pending: Pending,
@@ -33,8 +35,8 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-impl ParserPool {
-    pub fn new(program: PathBuf) -> Self {
+impl ParserHost {
+    fn new(program: PathBuf) -> Self {
         Self {
             program,
             proc: Mutex::new(None),
@@ -43,8 +45,7 @@ impl ParserPool {
         }
     }
 
-    /// Returns the document's plain text. Errors carry the parser's code (e.g. `ENCRYPTED: ...`).
-    pub fn parse_text(&self, path: &str) -> Result<String, String> {
+    fn parse_text(&self, path: &str) -> Reply {
         for attempt in 0..2 {
             match self.try_parse(path) {
                 Err(e) if e.starts_with("UNEXPECTED_EXIT") && attempt == 0 => continue,
@@ -148,14 +149,45 @@ impl ParserPool {
             let _ = proc.child.wait();
         }
     }
+}
 
-    pub fn shutdown(&self) {
+impl Drop for ParserHost {
+    fn drop(&mut self) {
         self.kill();
     }
 }
 
-impl Drop for ParserPool {
-    fn drop(&mut self) {
-        self.kill();
+/// A fixed set of parser processes; each indexing worker owns one slot so requests never queue
+/// behind another worker's slow document.
+pub struct ParserPool {
+    hosts: Vec<ParserHost>,
+}
+
+impl ParserPool {
+    pub fn new(program: PathBuf, size: usize) -> Self {
+        let size = size.max(1);
+        Self { hosts: (0..size).map(|_| ParserHost::new(program.clone())).collect() }
     }
+
+    pub fn size(&self) -> usize {
+        self.hosts.len()
+    }
+
+    /// Returns the document's plain text. Errors carry the parser's code (e.g. `ENCRYPTED: ...`).
+    pub fn parse_text(&self, slot: usize, path: &str) -> Reply {
+        self.hosts[slot % self.hosts.len()].parse_text(path)
+    }
+
+    pub fn shutdown(&self) {
+        for h in &self.hosts {
+            h.kill();
+        }
+    }
+}
+
+/// Parser processes to run while indexing: enough to use several cores, few enough that the
+/// foreground app stays responsive (each process holds roughly 100-250MB while busy).
+pub fn default_pool_size() -> usize {
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    (cores / 3).clamp(2, 4)
 }

@@ -631,3 +631,90 @@ export const EntryGraphic3DIcon: React.FC<{
     </svg>
   );
 };
+
+/**
+ * Preview: a glossy blue-iris eye.
+ */
+export const Preview3DIcon: React.FC<IconSizeProps> = ({ size = 18, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className={`graphic-3d-icon ${className}`}>
+    <defs>
+      <linearGradient id="pvWhite" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#FFFFFF" />
+        <stop offset="100%" stopColor="#CBD5E1" />
+      </linearGradient>
+      <radialGradient id="pvIris" cx="0.4" cy="0.35" r="0.8">
+        <stop offset="0%" stopColor="#A5F3FC" />
+        <stop offset="45%" stopColor="#38BDF8" />
+        <stop offset="100%" stopColor="#1D4ED8" />
+      </radialGradient>
+    </defs>
+    <ellipse cx="16" cy="27.5" rx="10" ry="1.8" fill="#0F172A" opacity="0.18" />
+    <path d="M1.8 15.5C6.5 6.8 25.5 6.8 30.2 15.5C25.5 24.2 6.5 24.2 1.8 15.5Z" fill="url(#pvWhite)" stroke="#475569" strokeWidth="1.2" strokeLinejoin="round" />
+    <circle cx="16" cy="15.5" r="6.6" fill="url(#pvIris)" stroke="#1E3A8A" strokeWidth="0.8" />
+    <circle cx="16" cy="15.5" r="2.9" fill="#0F172A" />
+    <circle cx="13.6" cy="13.2" r="1.9" fill="#FFFFFF" opacity="0.92" />
+    <circle cx="18.4" cy="18" r="0.9" fill="#FFFFFF" opacity="0.55" />
+    <path d="M5.2 13.2C9.5 8.8 22.5 8.8 26.8 13.2" stroke="#FFFFFF" strokeWidth="1" strokeLinecap="round" opacity="0.7" />
+  </svg>
+);
+
+/**
+ * Index folder: a golden folder with a blue database badge.
+ */
+export const IndexFolder3DIcon: React.FC<IconSizeProps> = ({ size = 18, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className={`graphic-3d-icon ${className}`}>
+    <defs>
+      <linearGradient id="ixBack" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#FDE68A" />
+        <stop offset="100%" stopColor="#F59E0B" />
+      </linearGradient>
+      <linearGradient id="ixFront" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#FCD34D" />
+        <stop offset="100%" stopColor="#D97706" />
+      </linearGradient>
+      <linearGradient id="ixDb" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stopColor="#2563EB" />
+        <stop offset="45%" stopColor="#60A5FA" />
+        <stop offset="100%" stopColor="#1E40AF" />
+      </linearGradient>
+    </defs>
+    <ellipse cx="16" cy="29" rx="12" ry="1.6" fill="#0F172A" opacity="0.18" />
+    <path d="M3 8.5a2 2 0 0 1 2-2h7.2l2.8 3H27a2 2 0 0 1 2 2V25a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" fill="url(#ixBack)" stroke="#B45309" strokeWidth="1" strokeLinejoin="round" />
+    <path d="M3 13a2 2 0 0 1 2-2h22a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" fill="url(#ixFront)" stroke="#B45309" strokeWidth="1" strokeLinejoin="round" />
+    <path d="M5 12.4h22" stroke="#FEF3C7" strokeWidth="1" strokeLinecap="round" opacity="0.8" />
+    {/* database badge */}
+    <path d="M15.5 17.5v8.6c0 1.5 3.2 2.7 7 2.7s7-1.2 7-2.7v-8.6Z" fill="url(#ixDb)" stroke="#1E3A8A" strokeWidth="0.9" strokeLinejoin="round" />
+    <ellipse cx="22.5" cy="17.5" rx="7" ry="2.7" fill="#BFDBFE" stroke="#1E3A8A" strokeWidth="0.9" />
+    <path d="M15.5 21.8c0 1.5 3.2 2.7 7 2.7s7-1.2 7-2.7" stroke="#DBEAFE" strokeWidth="0.9" opacity="0.8" />
+    <path d="M18 17.1c1.2-.5 2.9-.7 4.5-.7" stroke="#FFFFFF" strokeWidth="0.9" strokeLinecap="round" opacity="0.9" />
+  </svg>
+);
+
+/**
+ * Search: a magnifier with a blue glass lens and a golden handle.
+ */
+export const Search3DIcon: React.FC<IconSizeProps> = ({ size = 18, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className={`graphic-3d-icon ${className}`}>
+    <defs>
+      <linearGradient id="srRing" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stopColor="#CBD5E1" />
+        <stop offset="100%" stopColor="#475569" />
+      </linearGradient>
+      <radialGradient id="srGlass" cx="0.38" cy="0.32" r="0.85">
+        <stop offset="0%" stopColor="#F0F9FF" />
+        <stop offset="50%" stopColor="#7DD3FC" />
+        <stop offset="100%" stopColor="#0EA5E9" />
+      </radialGradient>
+      <linearGradient id="srHandle" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#FBBF24" />
+        <stop offset="100%" stopColor="#B45309" />
+      </linearGradient>
+    </defs>
+    <ellipse cx="17" cy="29.4" rx="10" ry="1.5" fill="#0F172A" opacity="0.16" />
+    <rect x="19.6" y="20.6" width="11.5" height="5" rx="2.5" transform="rotate(45 19.6 20.6)" fill="url(#srHandle)" stroke="#92400E" strokeWidth="0.9" />
+    <circle cx="13" cy="13" r="10" fill="url(#srRing)" stroke="#334155" strokeWidth="1" />
+    <circle cx="13" cy="13" r="7.4" fill="url(#srGlass)" stroke="#0369A1" strokeWidth="0.8" />
+    <path d="M8.4 10.6C9.4 8.4 11.6 7.1 14 7.2" stroke="#FFFFFF" strokeWidth="1.6" strokeLinecap="round" opacity="0.9" />
+    <circle cx="16.8" cy="16.6" r="1" fill="#FFFFFF" opacity="0.5" />
+  </svg>
+);

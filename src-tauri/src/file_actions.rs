@@ -645,8 +645,12 @@ pub fn open_in_explorer(path: String) -> Result<(), String> {
     {
         let p = Path::new(&path);
         if p.is_file() {
+            use std::os::windows::process::CommandExt;
+            // Explorer parses its own command line: the path must be quoted INSIDE the /select
+            // argument. `.arg()` would quote the whole token instead, so paths containing spaces
+            // or parentheses opened the folder without selecting the file.
             Command::new("explorer.exe")
-                .arg(format!("/select,{}", path))
+                .raw_arg(format!("/select,\"{}\"", path.replace('/', "\\")))
                 .spawn()
                 .map_err(|e| format!("탐색기 열기 실패: {}", e))?;
         } else {

@@ -273,6 +273,15 @@ fn cmd_index_search(
     index::db::search(&svc.conn()?, &request)
 }
 
+/// Brings the main window to the front (used when the detached preview asks to reveal a file).
+#[tauri::command(async)]
+fn cmd_focus_main_window(app: AppHandle) -> Result<(), String> {
+    let w = app.get_webview_window("main").ok_or("메인 창을 찾을 수 없습니다.")?;
+    let _ = w.unminimize();
+    let _ = w.show();
+    w.set_focus().map_err(|e| e.to_string())
+}
+
 const PREVIEW_WINDOW: &str = "preview";
 
 /// Opens (or focuses) the detached preview window. It is a real OS window, so it can be
@@ -480,6 +489,7 @@ pub fn run() {
             cmd_index_cancel,
             cmd_index_progress,
             cmd_index_search,
+            cmd_focus_main_window,
             cmd_open_preview_window,
             cmd_close_preview_window,
             cmd_check_for_updates,

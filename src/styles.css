@@ -2447,3 +2447,6 @@ body.col-resizing * {
 .st-splitter:hover::after, .st-splitter:active::after { background: var(--accent-primary); opacity: 1; }
 .theme-light .search-tab .st-splitter { background: #f4f5f7; }
 .st-results { border-bottom: none; }
+
+.preview-top-tabs button { display: inline-flex; align-items: center; gap: 5px; }
+.st-input .graphic-3d-icon, .st-toggle .graphic-3d-icon, .preview-title .graphic-3d-icon { flex: none; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25)); }

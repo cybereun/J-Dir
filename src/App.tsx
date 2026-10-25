@@ -50,7 +50,7 @@ import { DirectoryTree } from "./components/DirectoryTree";
 import { ExplorerPane } from "./components/ExplorerPane";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { emit, listen } from "@tauri-apps/api/event";
-import { apiClosePreviewWindow, apiOpenPreviewWindow } from "./services/tauriApi";
+import { apiClosePreviewWindow, apiFocusMainWindow, apiOpenPreviewWindow } from "./services/tauriApi";
 import { PREVIEW_EVENTS, PREVIEW_MODE_KEY, loadWinRect } from "./utils/previewWindow";
 import { GlobalFooter } from "./components/GlobalFooter";
 import { JobPanel } from "./components/JobPanel";
@@ -1550,6 +1550,50 @@ export const App: React.FC = () => {
         );
     }
   };
+
+  // "Show in pane" requests from the search tab (possibly from the detached preview window):
+  // navigate the active pane to the file's folder, then select the file once the list has loaded.
+  const activeFocusRef = useRef(activeFocus);
+  activeFocusRef.current = activeFocus;
+  const revealRef = useRef<{ pane: number; path: string; until: number } | null>(null);
+  const [revealTick, setRevealTick] = useState(0);
+
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let disposed = false;
+    listen<{ path: string }>("jdir://reveal-file", (ev) => {
+      const path = ev.payload.path;
+      const cut = path.lastIndexOf("\\");
+      if (cut <= 0) return;
+      let parent = path.slice(0, cut);
+      if (/^[A-Za-z]:$/.test(parent)) parent += "\\";
+      const pane = activeFocusRef.current;
+      revealRef.current = { pane, path, until: Date.now() + 5000 };
+      setActiveFocus(pane);
+      handleNavigate(pane, parent, true);
+      void apiFocusMainWindow().catch(() => undefined);
+      setRevealTick((t) => t + 1);
+      window.setTimeout(() => setRevealTick((t) => t + 1), 5200);
+    }).then((fn) => (disposed ? fn() : (off = fn)));
+    return () => {
+      disposed = true;
+      off?.();
+    };
+  }, [handleNavigate]);
+
+  useEffect(() => {
+    const req = revealRef.current;
+    if (!req) return;
+    const wanted = req.path.toLowerCase();
+    const found = (paneEntriesMap[req.pane] ?? []).some((e) => e.path.toLowerCase() === wanted);
+    if (found) {
+      revealRef.current = null;
+      handleUpdatePane(req.pane, { selectedPaths: (paneEntriesMap[req.pane] ?? []).filter((e) => e.path.toLowerCase() === wanted).map((e) => e.path) });
+    } else if (Date.now() > req.until) {
+      revealRef.current = null;
+      notify("목록에서 파일을 찾지 못했습니다. 파일이 이동·삭제되었거나 숨김 파일일 수 있습니다.", true);
+    }
+  }, [paneEntriesMap, revealTick, handleUpdatePane, notify]);
 
   // Detached preview window: open/close with the mode, and keep it fed with the selection.
   const previewPopupOpen = previewEnabled && previewMode === "popup";

@@ -303,6 +303,7 @@ export interface IndexProgress {
   total: number;
   done: number;
   errors: number;
+  scanning: boolean;
   current: string;
   cancelled: boolean;
   finished: boolean;

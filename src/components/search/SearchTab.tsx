@@ -3,11 +3,9 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   ChevronDown,
   ChevronRight,
-  Database,
   FolderOpen,
   FolderPlus,
   RefreshCw,
-  Search,
   Square,
   Trash2,
 } from "lucide-react";
@@ -22,10 +20,12 @@ import {
   apiIndexStart,
   apiOpenInExplorer,
   apiOpenItem,
+  apiRevealInPane,
   onIndexProgress,
 } from "../../services/tauriApi";
 import { formatBytes, formatDate } from "../../utils/colorFilter";
 import { fileExt, previewKindOf } from "../../utils/docKinds";
+import { IndexFolder3DIcon, Search3DIcon } from "../GraphicIcons";
 import { DocumentPreview } from "../preview/DocumentPreview";
 import { TextEntryView } from "../preview/TextEntryView";
 
@@ -280,7 +280,7 @@ export const SearchTab: React.FC = () => {
         <div className="st-index-head">
           <button type="button" className="st-toggle" onClick={() => setIndexOpen((v) => !v)}>
             {indexOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-            <Database size={13} />
+            <IndexFolder3DIcon size={20} />
             <b>색인 폴더</b>
             <span className="st-dim">
               {folders.length}개 · 문서 {totalDocs.toLocaleString()}개
@@ -305,13 +305,13 @@ export const SearchTab: React.FC = () => {
         {running && progress && (
           <div className="st-progress">
             <div className="st-bar">
-              <div style={{ width: `${progress.phase === "scan" ? 5 : pct}%` }} />
+              <div style={{ width: `${progress.total === 0 ? 5 : pct}%` }} />
             </div>
             <div className="st-progress-line">
               <span>
-                {progress.phase === "scan"
+                {progress.total === 0
                   ? `파일 확인 중… ${progress.current}`
-                  : `색인 중 ${progress.done.toLocaleString()} / ${progress.total.toLocaleString()} · ${progress.current}`}
+                  : `색인 중 ${progress.done.toLocaleString()} / ${progress.total.toLocaleString()}${progress.scanning ? "+" : ""} · ${progress.current}`}
               </span>
               <button type="button" className="mini-ghost-btn" onClick={() => void apiIndexCancel()}>
                 <Square size={11} /> 취소
@@ -355,7 +355,7 @@ export const SearchTab: React.FC = () => {
       {/* 2. Search box + filters */}
       <section className="st-search">
         <div className="st-input">
-          <Search size={14} />
+          <Search3DIcon size={18} />
           <input
             value={query}
             placeholder="파일 안의 내용으로 검색 (예: 연수 계획서)"
@@ -421,10 +421,11 @@ export const SearchTab: React.FC = () => {
               <button
                 type="button"
                 className="icon-btn"
-                title="폴더에서 보기"
+                title="J-Dir 탐색 패널에서 이 파일 보기 (Shift+클릭: Windows 탐색기에서 보기)"
                 onClick={(e) => {
                   e.stopPropagation();
-                  void apiOpenInExplorer(h.path);
+                  if (e.shiftKey) void apiOpenInExplorer(h.path);
+                  else void apiRevealInPane(h.path);
                 }}
               >
                 <FolderOpen size={12} />

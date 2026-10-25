@@ -1,11 +1,11 @@
 use super::db;
 use super::key::SecretKey;
-use super::parser::ParserPool;
+use super::parser::{default_pool_size, ParserPool};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
@@ -18,19 +18,23 @@ pub const INDEXED_EXTS: &[&str] = &[
 const MAX_TEXT_FILE: u64 = 20 * 1024 * 1024;
 const MAX_DOC_FILE: u64 = 150 * 1024 * 1024;
 const MAX_BODY_CHARS: usize = 3_000_000;
-const WORKERS: usize = 2;
 const BATCH: usize = 25;
+/// Discovered files waiting for a parser; bounds memory while the scan runs ahead of the parsers.
+const QUEUE_DEPTH: usize = 512;
 const SKIP_DIRS: &[&str] = &["node_modules", ".git", ".svn", "$recycle.bin", "system volume information", "$windows.~bt"];
 
 #[derive(Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexProgress {
     pub running: bool,
+    /// "scan" while only looking for files, "index" once parsing has started, "done" at the end.
     pub phase: String,
     pub folder_path: String,
+    /// Files found so far that need (re)indexing; keeps growing while `scanning` is true.
     pub total: u64,
     pub done: u64,
     pub errors: u64,
+    pub scanning: bool,
     pub current: String,
     pub cancelled: bool,
     pub finished: bool,
@@ -46,7 +50,7 @@ struct Candidate {
 }
 
 struct Extracted {
-    idx: usize,
+    cand: Candidate,
     status: &'static str,
     error: Option<String>,
     body: String,
@@ -66,7 +70,7 @@ impl IndexService {
         Self {
             dir,
             key,
-            parser: Arc::new(ParserPool::new(parser_program)),
+            parser: Arc::new(ParserPool::new(parser_program, default_pool_size())),
             running: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
             progress: Mutex::new(IndexProgress::default()),
@@ -104,15 +108,18 @@ impl IndexService {
         let spawned = std::thread::Builder::new().name("jdir-indexer".into()).spawn(move || {
             #[cfg(windows)]
             lower_thread_priority();
-            me.set_progress(&app, |p| *p = IndexProgress { running: true, phase: "scan".into(), ..Default::default() });
+            me.set_progress(&app, |p| {
+                *p = IndexProgress { running: true, phase: "scan".into(), scanning: true, ..Default::default() }
+            });
             let result = me.run(&app, folder_id);
             let cancelled = me.cancel.load(Ordering::SeqCst);
-            me.parser.shutdown(); // release the parser host's memory when idle
+            me.parser.shutdown(); // release the parser processes' memory when idle
             me.running.store(false, Ordering::SeqCst);
             me.set_progress(&app, |p| {
                 p.running = false;
                 p.finished = true;
                 p.cancelled = cancelled;
+                p.scanning = false;
                 p.phase = "done".into();
                 p.current.clear();
                 if let Err(e) = &result {
@@ -144,12 +151,16 @@ impl IndexService {
         Ok(())
     }
 
+    /// Scans and parses at the same time: a scanner thread feeds changed files to the parser
+    /// workers while this thread stores finished documents, so the first results appear quickly.
     fn index_folder(&self, app: &AppHandle, conn: &Connection, folder_id: i64, root: &str) -> Result<(), String> {
         self.set_progress(app, |p| {
             p.phase = "scan".into();
             p.folder_path = root.to_string();
             p.total = 0;
             p.done = 0;
+            p.errors = 0;
+            p.scanning = true;
             p.current.clear();
         });
 
@@ -166,81 +177,73 @@ impl IndexService {
             }
         }
 
-        let mut seen: HashSet<String> = HashSet::new();
-        let mut todo: Vec<Candidate> = Vec::new();
-        let mut visited = 0u64;
-        for entry in WalkDir::new(root).follow_links(false).into_iter().filter_entry(|e| !skip_entry(e)) {
-            visited += 1;
-            if visited % 500 == 0 {
-                if self.cancel.load(Ordering::SeqCst) {
-                    return Ok(());
-                }
-                self.set_progress(app, |p| p.current = format!("{}개 항목 확인 중…", visited));
-            }
-            let Ok(entry) = entry else { continue };
-            if !entry.file_type().is_file() {
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with("~$") {
-                continue; // Office lock files
-            }
-            let ext = Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-            if !INDEXED_EXTS.contains(&ext.as_str()) {
-                continue;
-            }
-            let Ok(meta) = entry.metadata() else { continue };
-            let size = meta.len();
-            let mtime_ms = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
-            let path = entry.path().to_string_lossy().to_string();
-            seen.insert(path.clone());
-            let unchanged = existing.get(&path).map_or(false, |(_, sz, mt)| *sz == size as i64 && *mt == mtime_ms);
-            if !unchanged {
-                todo.push(Candidate { path, name, ext, size, mtime_ms });
-            }
-        }
+        let workers = self.parser.size();
+        let discovered = AtomicU64::new(0);
+        let (cand_tx, cand_rx) = mpsc::sync_channel::<Candidate>(QUEUE_DEPTH);
+        let cand_rx = Mutex::new(cand_rx);
+        let (res_tx, res_rx) = mpsc::channel::<Extracted>();
 
-        // Files that disappeared since the last run.
-        let gone: Vec<i64> = existing.iter().filter(|(p, _)| !seen.contains(*p)).map(|(_, v)| v.0).collect();
-        if !gone.is_empty() {
-            conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
-            for id in &gone {
-                let _ = conn.execute("DELETE FROM doc_fts WHERE rowid = ?1", params![id]);
-                let _ = conn.execute("DELETE FROM documents WHERE id = ?1", params![id]);
-            }
-            conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
-        }
-
-        let total = todo.len() as u64;
-        self.set_progress(app, |p| {
-            p.phase = "index".into();
-            p.total = total;
-            p.done = 0;
-            p.current.clear();
-        });
-        if todo.is_empty() {
-            return Ok(());
-        }
-
-        let next = AtomicUsize::new(0);
-        let (tx, rx) = mpsc::channel::<Extracted>();
         let mut errors = 0u64;
         let mut done = 0u64;
         let mut in_batch = 0usize;
         let mut last_emit = Instant::now();
-        conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
         let mut write_error: Option<String> = None;
+        conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
 
-        std::thread::scope(|scope| {
-            for _ in 0..WORKERS {
-                let tx = tx.clone();
-                let todo = &todo;
-                let next = &next;
+        let existing_ref = &existing;
+        let discovered_ref = &discovered;
+        let me = self;
+        let seen: Option<HashSet<String>> = std::thread::scope(|scope| {
+            // Scanner: walks the folder and queues new/changed files. It owns the queue's sender,
+            // so the queue closes (and the workers finish) as soon as the scan ends.
+            let scanner = scope.spawn(move || {
+                #[cfg(windows)]
+                lower_thread_priority();
+                let mut seen: HashSet<String> = HashSet::new();
+                let mut visited = 0u64;
+                for entry in WalkDir::new(root).follow_links(false).into_iter().filter_entry(|e| !skip_entry(e)) {
+                    visited += 1;
+                    if visited % 200 == 0 && me.cancel.load(Ordering::SeqCst) {
+                        return None;
+                    }
+                    let Ok(entry) = entry else { continue };
+                    if !entry.file_type().is_file() {
+                        continue;
+                    }
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with("~$") {
+                        continue; // Office lock files
+                    }
+                    let ext = Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                    if !INDEXED_EXTS.contains(&ext.as_str()) {
+                        continue;
+                    }
+                    let Ok(meta) = entry.metadata() else { continue };
+                    let size = meta.len();
+                    let mtime_ms = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0);
+                    let path = entry.path().to_string_lossy().to_string();
+                    seen.insert(path.clone());
+                    let unchanged = existing_ref.get(&path).map_or(false, |(_, sz, mt)| *sz == size as i64 && *mt == mtime_ms);
+                    if unchanged {
+                        continue;
+                    }
+                    discovered_ref.fetch_add(1, Ordering::Relaxed);
+                    if cand_tx.send(Candidate { path, name, ext, size, mtime_ms }).is_err() {
+                        return None; // workers are gone (cancelled or storage failure)
+                    }
+                }
+                Some(seen)
+            });
+
+            // Parser workers: one process each, so slow documents only delay their own worker.
+            for slot in 0..workers {
+                let res_tx = res_tx.clone();
+                let cand_rx = &cand_rx;
                 scope.spawn(move || {
                     #[cfg(windows)]
                     lower_thread_priority();
@@ -248,23 +251,24 @@ impl IndexService {
                         if self.cancel.load(Ordering::SeqCst) {
                             break;
                         }
-                        let idx = next.fetch_add(1, Ordering::SeqCst);
-                        let Some(c) = todo.get(idx) else { break };
-                        let (status, error, body) = self.extract(c);
-                        if tx.send(Extracted { idx, status, error, body }).is_err() {
+                        let next = cand_rx.lock().unwrap_or_else(|e| e.into_inner()).recv();
+                        let Ok(cand) = next else { break };
+                        let (status, error, body) = self.extract(slot, &cand);
+                        if res_tx.send(Extracted { cand, status, error, body }).is_err() {
                             break;
                         }
                     }
                 });
             }
-            drop(tx);
+            drop(res_tx);
 
-            for res in rx {
-                let c = &todo[res.idx];
+            // Writer (this thread): store results in batches and report progress.
+            for res in res_rx {
                 if res.status == "error" {
                     errors += 1;
                 }
                 if write_error.is_none() {
+                    let c = &res.cand;
                     if let Err(e) = upsert(conn, folder_id, c, res.status, res.error.as_deref(), &res.body) {
                         write_error = Some(e);
                         self.cancel.store(true, Ordering::SeqCst);
@@ -276,25 +280,51 @@ impl IndexService {
                     let _ = conn.execute_batch("COMMIT; BEGIN");
                     in_batch = 0;
                 }
-                if last_emit.elapsed() > Duration::from_millis(150) || done == total {
+                if last_emit.elapsed() > Duration::from_millis(150) {
                     last_emit = Instant::now();
-                    let name = c.name.clone();
+                    let name = res.cand.name.clone();
+                    let total = discovered.load(Ordering::Relaxed);
                     self.set_progress(app, |p| {
+                        p.phase = "index".into();
+                        p.total = total;
                         p.done = done;
                         p.errors = errors;
                         p.current = name;
                     });
                 }
             }
+            scanner.join().unwrap_or(None)
         });
         conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
-        match write_error {
-            Some(e) => Err(e),
-            None => Ok(()),
+        if let Some(e) = write_error {
+            return Err(e);
         }
+        let total = discovered.load(Ordering::Relaxed);
+        self.set_progress(app, |p| {
+            p.total = total;
+            p.done = done;
+            p.errors = errors;
+            p.scanning = false;
+        });
+
+        // Files that disappeared since the last run (only trustworthy if the scan completed).
+        if let Some(seen) = seen {
+            if !self.cancel.load(Ordering::SeqCst) {
+                let gone: Vec<i64> = existing.iter().filter(|(p, _)| !seen.contains(*p)).map(|(_, v)| v.0).collect();
+                if !gone.is_empty() {
+                    conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+                    for id in &gone {
+                        let _ = conn.execute("DELETE FROM doc_fts WHERE rowid = ?1", params![id]);
+                        let _ = conn.execute("DELETE FROM documents WHERE id = ?1", params![id]);
+                    }
+                    conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        Ok(())
     }
 
-    fn extract(&self, c: &Candidate) -> (&'static str, Option<String>, String) {
+    fn extract(&self, slot: usize, c: &Candidate) -> (&'static str, Option<String>, String) {
         match c.ext.as_str() {
             "txt" | "md" | "markdown" => {
                 if c.size > MAX_TEXT_FILE {
@@ -309,7 +339,7 @@ impl IndexService {
                 if c.size > MAX_DOC_FILE {
                     return ("skipped", Some("파일이 커서 본문을 색인하지 않았습니다.".into()), String::new());
                 }
-                match self.parser.parse_text(&c.path) {
+                match self.parser.parse_text(slot, &c.path) {
                     Ok(text) if text.trim().is_empty() => ("empty", None, String::new()),
                     Ok(text) => ("ok", None, truncate_chars(text, MAX_BODY_CHARS)),
                     Err(e) if e.starts_with("IMAGE_BASED_PDF") => {

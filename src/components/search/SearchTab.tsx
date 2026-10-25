@@ -46,6 +46,39 @@ const EXT_GROUPS: { label: string; exts: string[] }[] = [
   { label: "텍스트 (txt, md)", exts: ["txt", "md", "markdown"] },
 ];
 
+const STATE_KEY = "jdir.searchState.v1";
+
+interface SavedSearchState {
+  query: string;
+  mode: "keyword" | "filename";
+  extGroup: number;
+  folderFilter: number | null;
+  selectedPath: string | null;
+  loaded: number;
+}
+
+/**
+ * The search tab lives in two different windows (docked sidebar / detached popup) that share
+ * localStorage, so the UI state is saved there and restored when the tab is mounted again.
+ */
+function loadSavedState(): SavedSearchState | null {
+  try {
+    const raw = localStorage.getItem(STATE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<SavedSearchState>;
+    return {
+      query: typeof v.query === "string" ? v.query : "",
+      mode: v.mode === "filename" ? "filename" : "keyword",
+      extGroup: Number.isInteger(v.extGroup) && (v.extGroup as number) >= 0 && (v.extGroup as number) < EXT_GROUPS.length ? (v.extGroup as number) : 0,
+      folderFilter: typeof v.folderFilter === "number" ? v.folderFilter : null,
+      selectedPath: typeof v.selectedPath === "string" ? v.selectedPath : null,
+      loaded: typeof v.loaded === "number" && v.loaded > 0 ? Math.min(v.loaded, 1000) : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function Snippet({ text }: { text: string }) {
   const parts: React.ReactNode[] = [];
   let rest = text;
@@ -92,15 +125,18 @@ export const SearchTab: React.FC = () => {
   const [indexOpen, setIndexOpen] = useState(true);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
 
-  const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<"keyword" | "filename">("keyword");
-  const [extGroup, setExtGroup] = useState(0);
-  const [folderFilter, setFolderFilter] = useState<number | null>(null);
+  const savedRef = useRef<SavedSearchState | null>(loadSavedState());
+  const [query, setQuery] = useState(savedRef.current?.query ?? "");
+  const [mode, setMode] = useState<"keyword" | "filename">(savedRef.current?.mode ?? "keyword");
+  const [extGroup, setExtGroup] = useState(savedRef.current?.extGroup ?? 0);
+  const [folderFilter, setFolderFilter] = useState<number | null>(savedRef.current?.folderFilter ?? null);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<SearchHit | null>(null);
   const searchSeq = useRef(0);
+  // Bumped only when an indexing run finishes while this tab is open (not by the initial snapshot).
+  const [indexDoneTick, setIndexDoneTick] = useState(0);
 
   // Draggable divider between the result list and the document preview (height persisted).
   const [resultsH, setResultsH] = useState<number | null>(() => {
@@ -206,13 +242,70 @@ export const SearchTab: React.FC = () => {
     let disposed = false;
     onIndexProgress((p) => {
       setProgress(p);
-      if (p.finished) void refreshFolders();
+      if (p.finished) {
+        void refreshFolders();
+        setIndexDoneTick((t) => t + 1);
+      }
     }).then((fn) => (disposed ? fn() : (off = fn)));
     return () => {
       disposed = true;
       off?.();
     };
   }, [refreshFolders]);
+
+  // Restore the previous search (same query, as many results as were loaded, same selection).
+  useEffect(() => {
+    const saved = savedRef.current;
+    if (!saved || !saved.query.trim()) return;
+    const seq = ++searchSeq.current;
+    setSearching(true);
+    (async () => {
+      try {
+        const target = Math.max(PAGE, saved.loaded);
+        let all: SearchHit[] = [];
+        let res: SearchResponse | null = null;
+        while (all.length < target) {
+          res = await apiIndexSearch({
+            text: saved.query.trim(),
+            mode: saved.mode,
+            exts: EXT_GROUPS[saved.extGroup].exts,
+            folderId: saved.folderFilter,
+            limit: Math.min(200, target - all.length),
+            offset: all.length,
+          });
+          all = all.concat(res.hits);
+          if (res.hits.length === 0 || all.length >= res.total) break;
+        }
+        if (seq !== searchSeq.current || !res) return;
+        setResponse(res);
+        setHits(all);
+        setSelected(all.find((h) => h.path === saved.selectedPath) ?? null);
+      } catch (err) {
+        if (seq === searchSeq.current) setNotice({ text: String(err), error: true });
+      } finally {
+        if (seq === searchSeq.current) setSearching(false);
+      }
+    })();
+    // restore once, on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep the saved state current so the other window can pick it up.
+  useEffect(() => {
+    const state: SavedSearchState = {
+      query,
+      mode,
+      extGroup,
+      folderFilter,
+      selectedPath: selected?.path ?? null,
+      loaded: hits.length,
+    };
+    try {
+      localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [query, mode, extGroup, folderFilter, selected, hits.length]);
 
   // Search as you type (debounced) and whenever a filter changes.
   const firstRun = useRef(true);
@@ -228,9 +321,9 @@ export const SearchTab: React.FC = () => {
 
   // Results change once an indexing run completes.
   useEffect(() => {
-    if (progress?.finished && query.trim()) void runSearch(false);
+    if (indexDoneTick > 0 && query.trim()) void runSearch(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [progress?.finished]);
+  }, [indexDoneTick]);
 
   const addFolder = async () => {
     try {

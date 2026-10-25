@@ -7,7 +7,7 @@
 **Windows를 위한 고성능 4분할(Quad-Pane) 전문가용 파일 탐색기**
 
 [![Developer](https://img.shields.io/badge/Developer-Lebi__Cybereun-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/cybereun)
-[![Release](https://img.shields.io/badge/Release-v1.1.7-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.2.0-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/cybereun/J-Dir/releases)
 [![Tech Stack](https://img.shields.io/badge/Built%20With-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-f59e0b?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/cybereun/J-Dir)
 
@@ -71,7 +71,22 @@
 - 앱 실행 시 GitHub 저장소의 최신 릴리즈를 자동으로 감지하며, 새 버전이 출시되면 **자동으로 업데이트 팝업창**을 띄웁니다.
 - **`지금 업데이트 설치 및 재시작`** 클릭 한 번으로 최신 설치 파일을 다운로드·설치한 후 앱을 자동으로 재시작합니다. (상단 타이틀 옆 `UP` 아이콘 버튼으로 수동 확인도 가능)
 
+### 9-1. 문서 본문 검색 (색인 검색)
+- **검색 탭**: 미리보기 창의 [검색] 탭에서 색인 폴더를 추가하면, 파일 이름을 몰라도 **문서 안의 내용**으로 찾을 수 있습니다. 결과에는 일치한 문장이 강조되어 보이고, 결과를 클릭하면 아래에서 문서 내용과 검색어 위치를 바로 확인할 수 있습니다.
+- **색인 대상**: `txt`, `md`, `markdown`, `hwp`, `hwpx`, `hml`, `hwpml`, `pdf`, `xlsx`, `docx`, `doc`, `xls`, `ppt`, `pptx`. 사용자가 고른 폴더만 색인하며, 변경된 파일만 다시 처리합니다.
+- **암호화된 색인 DB**: 색인은 SQLCipher로 암호화된 로컬 DB에 저장되고 키는 Windows 계정(DPAPI)에 묶여 보호됩니다. 문서 내용은 PC 밖으로 전송되지 않습니다.
+- **빠른 색인**: 문서 파서 프로세스를 여러 개 사용하고 폴더 탐색과 분석을 동시에 진행합니다. 색인은 백그라운드(낮은 우선순위)에서 실행되며 언제든 취소할 수 있습니다.
+- **편의 기능**: 결과 목록·미리보기 경계선 드래그 조절, 사이드바 ↔ 팝업 창 전환 시 검색 상태 유지, [폴더에서 보기]로 J-Dir 패널에서 해당 파일 선택(Shift+클릭: Windows 탐색기).
+
 ---
+
+## v1.2.0 변경 사항
+- **문서 본문 검색(색인 검색) 탭 추가**: 색인 폴더 추가, 본문 검색, 일치 문장 강조, 결과 미리보기와 검색어 위치 표시. 암호화된 로컬 색인 DB(SQLCipher) 사용.
+- **색인 속도 개선**: 파서 프로세스 풀과 스캔·분석 병행으로 약 2배 빨라졌고, 첫 문서가 색인되기까지의 대기 시간이 줄었습니다.
+- **폴더에서 보기 개선**: J-Dir 패널이 해당 파일의 폴더로 이동해 파일을 선택합니다. Shift+클릭 시 Windows 탐색기에서 파일이 정확히 선택됩니다(공백이 있는 경로 오류 수정).
+- **검색 상태 유지**: 사이드바와 팝업 창을 오가도 검색어·결과·선택한 문서가 그대로 유지됩니다.
+- **UI**: 미리보기·검색·색인 폴더 3D 컬러 아이콘, 서류철 모양의 입체 탭(상단 탭과 문서 보기 탭), 결과 목록과 미리보기 사이 경계선 드래그 조절.
+- 빌드 시 Strawberry Perl과 한글이 없는 `CARGO_TARGET_DIR`가 필요합니다(README 빌드 요구 사항 참고).
 
 ## v1.1.7 변경 사항
 - **압축 파일 미리보기**: zip 계열 파일의 목록 보기, 압축을 풀지 않고 내부 파일 미리보기, 전체/선택 항목 압축 풀기(풀기 전 대상 폴더 확인, 다른 위치 선택 가능).
@@ -182,6 +197,26 @@ npm run tauri dev
 # 4. 릴리즈 실행 파일 및 NSIS 설치 파일(.exe) 빌드
 npm run tauri build
 ```
+
+> **빌드 요구 사항 (검색 색인 기능)**: 암호화 색인 DB(SQLCipher)가 OpenSSL을 소스에서 빌드하므로
+> **Windows용 Perl(Strawberry Perl)** 이 PATH에 있어야 하고(Git에 포함된 Perl은 사용할 수 없음),
+> OpenSSL의 어셈블러가 한글 경로를 읽지 못하므로 `CARGO_TARGET_DIR`을 **한글이 없는 경로**로 지정하세요.
+> 또한 문서 파서 실행 파일을 `src-tauri/resources/jdir-parser.exe`에 두어야 합니다(저장소에는 포함되지 않음).
+
+---
+
+## 오픈소스 사용 고지 (Open-Source Notices)
+
+J-Dir의 문서 미리보기 기능은 다음 오픈소스 프로젝트를 사용합니다. 각 프로젝트의 저작권과 라이선스는 원 저작자에게 있습니다.
+
+| 구성 요소 | 저작권자 | 라이선스 | 용도 |
+|---|---|---|---|
+| [kordoc](https://github.com/chrisryugj/kordoc) | chrisryugj | MIT | HWP/HWPX/PDF/Office 문서 텍스트·표 파싱 |
+| [rhwp](https://github.com/edwardkim/rhwp) (`@rhwp/core`) | Edward Kim | MIT | HWP/HWPX 원본 레이아웃 렌더링 |
+| [PDF.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) | Mozilla Foundation | Apache-2.0 | PDF 원본 레이아웃 렌더링 |
+
+kordoc은 OpenDataLoader PDF(Hancom, Apache-2.0)와 hml-equation-parser(Open Bapul, Apache-2.0)에서 파생된 코드를 포함하며, 문서 파서는 cfb·JSZip 등의 라이브러리와 함께 `jdir-parser.exe`로 묶여 배포됩니다.
+라이선스 전문과 전체 목록은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 확인하세요.
 
 ---
 

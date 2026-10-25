@@ -46,9 +46,9 @@ function renderableRows(table: DocBlockTable) {
   );
 }
 
-export const DocumentTextView: React.FC<{ doc: ParsedDocument }> = ({ doc }) => {
-  const [findOpen, setFindOpen] = useState(false);
-  const [query, setQuery] = useState("");
+export const DocumentTextView: React.FC<{ doc: ParsedDocument; highlight?: string }> = ({ doc, highlight }) => {
+  const [findOpen, setFindOpen] = useState(Boolean(highlight));
+  const [query, setQuery] = useState(highlight ?? "");
   const [active, setActive] = useState(0);
   const [copied, setCopied] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -60,6 +60,13 @@ export const DocumentTextView: React.FC<{ doc: ParsedDocument }> = ({ doc }) => 
     () => (needle ? doc.blocks.flatMap(blockTexts).reduce((n, t) => n + countOccurrences(t, needle), 0) : 0),
     [doc.blocks, needle],
   );
+
+  useEffect(() => {
+    if (highlight) {
+      setQuery(highlight);
+      setFindOpen(true);
+    }
+  }, [highlight, doc]);
 
   useEffect(() => setActive(0), [needle]);
   useEffect(() => {

@@ -1,6 +1,6 @@
 [package]
 name = "j-dir"
-version = "1.1.7"
+version = "1.2.0"
 description = "J-Dir — The Quad Explorer for Windows"
 authors = ["J-Dir"]
 edition = "2021"
@@ -26,10 +26,14 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_UI_Shell",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
+    "Win32_Security_Cryptography",
+    "Win32_System_Threading",
 ] }
 notify = "6"
 encoding_rs = "0.8.42"
 zip = { version = "9.0.4", default-features = false, features = ["deflate"] }
+rusqlite = { version = "0.39.0", features = ["bundled-sqlcipher-vendored-openssl", "functions"] }
+getrandom = "0.3"
 
 [dev-dependencies]
 tempfile = "3"

@@ -30,7 +30,7 @@ fn format_hex_dump(bytes: &[u8]) -> String {
 
 /// Decodes preview bytes: UTF-8 (tolerating a multibyte char cut at the read limit),
 /// then CP949/EUC-KR (common for legacy Korean text), finally lossy.
-fn decode_text(buf: &[u8], truncated: bool) -> (String, &'static str) {
+pub(crate) fn decode_text(buf: &[u8], truncated: bool) -> (String, &'static str) {
     let body = buf.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(buf);
     match std::str::from_utf8(body) {
         Ok(s) => (s.to_string(), "UTF-8"),

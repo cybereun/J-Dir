@@ -14,7 +14,7 @@ pub const MAX_RAW_BYTES: u64 = 150 * 1024 * 1024;
 
 /// Finds the bundled kordoc parser: next to the installed resources first,
 /// then (dev builds) the source tree's `resources` folder.
-fn locate_parser(resource_dir: Option<PathBuf>) -> Option<PathBuf> {
+pub(crate) fn locate_parser(resource_dir: Option<PathBuf>) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(dir) = resource_dir {
         candidates.push(dir.join("resources").join(PARSER_NAME));

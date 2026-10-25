@@ -2,6 +2,7 @@ pub mod archive;
 pub mod clipboard;
 pub mod docparse;
 pub mod file_actions;
+pub mod index;
 pub mod fs_ops;
 pub mod jobs;
 pub mod models;
@@ -227,6 +228,60 @@ fn cmd_zip_extract(path: String, dest_dir: String, indices: Option<Vec<usize>>) 
     zipview::extract(&path, &dest_dir, indices)
 }
 
+#[tauri::command(async)]
+fn cmd_index_folders(app: AppHandle, holder: State<index::IndexHolder>) -> Result<Vec<index::db::FolderInfo>, String> {
+    let svc = holder.service(&app)?;
+    index::db::list_folders(&svc.conn()?)
+}
+
+#[tauri::command(async)]
+fn cmd_index_add_folder(app: AppHandle, holder: State<index::IndexHolder>, path: String) -> Result<i64, String> {
+    let svc = holder.service(&app)?;
+    index::db::add_folder(&svc.conn()?, &path)
+}
+
+#[tauri::command(async)]
+fn cmd_index_remove_folder(app: AppHandle, holder: State<index::IndexHolder>, id: i64) -> Result<(), String> {
+    let svc = holder.service(&app)?;
+    index::db::remove_folder(&mut svc.conn()?, id)
+}
+
+#[tauri::command(async)]
+fn cmd_index_start(app: AppHandle, holder: State<index::IndexHolder>, folder_id: Option<i64>) -> Result<(), String> {
+    let svc = holder.service(&app)?;
+    svc.start(app.clone(), folder_id)
+}
+
+#[tauri::command(async)]
+fn cmd_index_cancel(app: AppHandle, holder: State<index::IndexHolder>) -> Result<(), String> {
+    holder.service(&app)?.cancel();
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn cmd_index_progress(app: AppHandle, holder: State<index::IndexHolder>) -> Result<index::indexer::IndexProgress, String> {
+    Ok(holder.service(&app)?.progress())
+}
+
+#[tauri::command(async)]
+fn cmd_index_search(
+    app: AppHandle,
+    holder: State<index::IndexHolder>,
+    request: index::db::SearchRequest,
+) -> Result<index::db::SearchResponse, String> {
+    let svc = holder.service(&app)?;
+    index::db::search(&svc.conn()?, &request)
+}
+
+/// Brings the main window to the front (used when the detached preview asks to reveal a file).
+#[tauri::command(async)]
+fn cmd_focus_main_window(app: AppHandle) -> Result<(), String> {
+    let w = app.get_webview_window("main").ok_or("메인 창을 찾을 수 없습니다.")?;
+    let _ = w.unminimize();
+    let _ = w.show();
+    w.set_focus().map_err(|e| e.to_string())
+}
+
 const PREVIEW_WINDOW: &str = "preview";
 
 /// Opens (or focuses) the detached preview window. It is a real OS window, so it can be
@@ -381,6 +436,7 @@ fn cmd_watch_dirs(
 pub fn run() {
     tauri::Builder::default()
         .manage(WatchState::default())
+        .manage(index::IndexHolder::default())
         .plugin(tauri_plugin_dialog::init())
         .on_window_event(|window, event| {
             if window.label() == PREVIEW_WINDOW {
@@ -426,6 +482,14 @@ pub fn run() {
             cmd_zip_read_entry,
             cmd_zip_parse_entry,
             cmd_zip_extract,
+            cmd_index_folders,
+            cmd_index_add_folder,
+            cmd_index_remove_folder,
+            cmd_index_start,
+            cmd_index_cancel,
+            cmd_index_progress,
+            cmd_index_search,
+            cmd_focus_main_window,
             cmd_open_preview_window,
             cmd_close_preview_window,
             cmd_check_for_updates,

@@ -237,3 +237,34 @@ export interface UpdateCheckResult {
   htmlUrl: string;
 }
 
+
+export interface DocBlockCell {
+  text: string;
+  colSpan: number;
+  rowSpan: number;
+}
+
+export interface DocBlockTable {
+  rows: number;
+  cols: number;
+  hasHeader?: boolean;
+  cells: DocBlockCell[][];
+}
+
+export interface DocBlock {
+  type: "paragraph" | "table" | "heading" | "list" | "image" | "separator";
+  text?: string;
+  level?: number | null;
+  pageNumber?: number | null;
+  href?: string | null;
+  listType?: "ordered" | "unordered" | null;
+  children?: DocBlock[];
+  table?: DocBlockTable | null;
+}
+
+export interface ParsedDocument {
+  title: string | null;
+  plainText: string;
+  blocks: DocBlock[];
+  warnings: { code: string; message: string; page?: number }[];
+}

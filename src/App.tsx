@@ -49,6 +49,9 @@ import { TopMenuBar } from "./components/TopMenuBar";
 import { DirectoryTree } from "./components/DirectoryTree";
 import { ExplorerPane } from "./components/ExplorerPane";
 import { PreviewPanel } from "./components/PreviewPanel";
+import { emit, listen } from "@tauri-apps/api/event";
+import { apiClosePreviewWindow, apiOpenPreviewWindow } from "./services/tauriApi";
+import { PREVIEW_EVENTS, PREVIEW_MODE_KEY, loadWinRect } from "./utils/previewWindow";
 import { GlobalFooter } from "./components/GlobalFooter";
 import { JobPanel } from "./components/JobPanel";
 import { PropertiesModal } from "./components/PropertiesModal";
@@ -273,6 +276,13 @@ export const App: React.FC = () => {
   );
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const [selectedForPreview, setSelectedForPreview] = useState<FileEntry | null>(null);
+  const [previewMode, setPreviewMode] = useState<"dock" | "popup">(() => {
+    try {
+      return localStorage.getItem(PREVIEW_MODE_KEY) === "popup" ? "popup" : "dock";
+    } catch {
+      return "dock";
+    }
+  });
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
   // First run starts on C:\ and is then populated from Q-Dir settings / built-in defaults.
@@ -1541,6 +1551,45 @@ export const App: React.FC = () => {
     }
   };
 
+  // Detached preview window: open/close with the mode, and keep it fed with the selection.
+  const previewPopupOpen = previewEnabled && previewMode === "popup";
+  const latestPreviewRef = useRef({ entry: selectedForPreview, theme });
+  latestPreviewRef.current = { entry: selectedForPreview, theme };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREVIEW_MODE_KEY, previewMode);
+    } catch {
+      /* storage unavailable */
+    }
+  }, [previewMode]);
+
+  useEffect(() => {
+    if (previewPopupOpen) {
+      apiOpenPreviewWindow(loadWinRect()).catch(() => setPreviewMode("dock"));
+    } else {
+      apiClosePreviewWindow().catch(() => undefined);
+    }
+  }, [previewPopupOpen]);
+
+  useEffect(() => {
+    if (previewPopupOpen) void emit(PREVIEW_EVENTS.entry, { entry: selectedForPreview, theme });
+  }, [previewPopupOpen, selectedForPreview, theme]);
+
+  useEffect(() => {
+    const offs: Array<() => void> = [];
+    let disposed = false;
+    const reg = (name: string, fn: () => void) =>
+      listen(name, fn).then((off) => (disposed ? off() : offs.push(off)));
+    void reg(PREVIEW_EVENTS.ready, () => void emit(PREVIEW_EVENTS.entry, latestPreviewRef.current));
+    void reg(PREVIEW_EVENTS.dock, () => setPreviewMode("dock"));
+    void reg(PREVIEW_EVENTS.closed, () => setPreviewMode((m) => (m === "popup" ? "dock" : m)));
+    return () => {
+      disposed = true;
+      offs.forEach((off) => off());
+    };
+  }, []);
+
   return (
     <div
       className={`jdir-app-root theme-${theme}`}
@@ -1623,9 +1672,11 @@ export const App: React.FC = () => {
         <div className="quad-explorer-region">{renderQuadWorkspace()}</div>
 
         {/* Right Preview Dock ([Vorschau]) */}
-        {previewEnabled && (
+        {previewEnabled && previewMode === "dock" && (
           <PreviewPanel
             selectedEntry={selectedForPreview}
+            mode="dock"
+            onToggleMode={() => setPreviewMode("popup")}
             onClose={() => setPreviewEnabled(false)}
           />
         )}

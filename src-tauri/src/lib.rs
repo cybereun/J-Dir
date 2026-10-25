@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod clipboard;
+pub mod docparse;
 pub mod file_actions;
 pub mod fs_ops;
 pub mod jobs;
@@ -171,6 +172,65 @@ fn cmd_read_file_preview(path: String, max_bytes: usize) -> Result<FilePreviewDa
     preview::read_file_preview(path, max_bytes)
 }
 
+/// Raw file bytes for original-layout viewers (PDF.js / rhwp WASM / images).
+#[tauri::command(async)]
+fn cmd_read_file_bytes(path: String, max_bytes: Option<u64>) -> Result<tauri::ipc::Response, String> {
+    docparse::read_raw_bytes(&path, max_bytes.unwrap_or(docparse::MAX_RAW_BYTES))
+        .map(tauri::ipc::Response::new)
+}
+
+/// Parses a document (HWP/HWPX/PDF/DOC/DOCX/XLS/XLSX/PPT/...) into structured text blocks.
+#[tauri::command(async)]
+fn cmd_parse_document(app: AppHandle, path: String) -> Result<serde_json::Value, String> {
+    let mut doc = docparse::parse_document(&path, app.path().resource_dir().ok())?;
+    if let Some(obj) = doc.as_object_mut() {
+        obj.remove("markdown");
+    }
+    Ok(doc)
+}
+
+const PREVIEW_WINDOW: &str = "preview";
+
+/// Opens (or focuses) the detached preview window. It is a real OS window, so it can be
+/// moved and resized anywhere on the desktop, outside the main window's bounds.
+#[tauri::command(async)]
+fn cmd_open_preview_window(
+    app: AppHandle,
+    x: Option<f64>,
+    y: Option<f64>,
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window(PREVIEW_WINDOW) {
+        let _ = w.unminimize();
+        let _ = w.show();
+        return w.set_focus().map_err(|e| e.to_string());
+    }
+    let mut builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        PREVIEW_WINDOW,
+        tauri::WebviewUrl::App("index.html?preview=1".into()),
+    )
+    .title("J-Dir 미리보기")
+    .inner_size(width.unwrap_or(620.0).max(360.0), height.unwrap_or(800.0).max(300.0))
+    .min_inner_size(360.0, 300.0)
+    .resizable(true)
+    .drag_and_drop(false);
+    builder = match (x, y) {
+        (Some(x), Some(y)) => builder.position(x, y),
+        _ => builder.center(),
+    };
+    builder.build().map(|_| ()).map_err(|e| format!("미리보기 창 열기 실패: {}", e))
+}
+
+#[tauri::command(async)]
+fn cmd_close_preview_window(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window(PREVIEW_WINDOW) {
+        w.destroy().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command(async)]
 fn cmd_check_for_updates() -> Result<UpdateCheckResult, String> {
     updater::check_for_updates()
@@ -284,6 +344,13 @@ pub fn run() {
     tauri::Builder::default()
         .manage(WatchState::default())
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            if window.label() == PREVIEW_WINDOW {
+                if let tauri::WindowEvent::Destroyed = event {
+                    let _ = window.app_handle().emit("jdir://preview-closed", ());
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             cmd_list_directory,
             cmd_list_subdirectories,
@@ -314,6 +381,10 @@ pub fn run() {
             cmd_export_file_list,
             cmd_import_qdir_config,
             cmd_read_file_preview,
+            cmd_read_file_bytes,
+            cmd_parse_document,
+            cmd_open_preview_window,
+            cmd_close_preview_window,
             cmd_check_for_updates,
             cmd_install_update_and_restart,
         ])

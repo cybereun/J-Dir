@@ -1,6 +1,6 @@
 {
   "identifier": "default",
   "description": "J-Dir desktop permissions",
-  "windows": ["main"],
+  "windows": ["main", "preview"],
   "permissions": ["core:default", "dialog:default"]
 }

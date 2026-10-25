@@ -9,6 +9,7 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   cacheDir: "C:/Users/cybereun/AppData/Local/J-Dir-Cache/.vite",
+  optimizeDeps: { exclude: ["pdfjs-dist", "@rhwp/core"] },
   resolve: {
     alias: {
       react: path.join(cacheModules, "react"),
@@ -16,6 +17,8 @@ export default defineConfig({
       "lucide-react": path.join(cacheModules, "lucide-react"),
       "@tauri-apps/api": path.join(cacheModules, "@tauri-apps/api"),
       "@tauri-apps/plugin-dialog": path.join(cacheModules, "@tauri-apps/plugin-dialog"),
+      "@rhwp/core": path.join(cacheModules, "@rhwp/core"),
+      "pdfjs-dist": path.join(cacheModules, "pdfjs-dist"),
     },
   },
   server: {

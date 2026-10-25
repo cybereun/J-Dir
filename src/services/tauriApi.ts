@@ -7,6 +7,7 @@ import {
   FileActionReport,
   FileEntry,
   FilePreviewData,
+  ParsedDocument,
   FolderSizeStats,
   JobProgressEvent,
   PathPair,
@@ -382,6 +383,28 @@ export async function apiReadFilePreview(
     };
   }
   return invoke<FilePreviewData>("cmd_read_file_preview", { path, maxBytes });
+}
+
+export async function apiReadFileBytes(path: string, maxBytes?: number): Promise<Uint8Array> {
+  const buf = await invoke<ArrayBuffer>("cmd_read_file_bytes", { path, maxBytes: maxBytes ?? null });
+  return new Uint8Array(buf);
+}
+
+export async function apiParseDocument(path: string): Promise<ParsedDocument> {
+  return invoke<ParsedDocument>("cmd_parse_document", { path });
+}
+
+export async function apiOpenPreviewWindow(rect?: { x: number; y: number; w: number; h: number } | null): Promise<void> {
+  await invoke("cmd_open_preview_window", {
+    x: rect?.x ?? null,
+    y: rect?.y ?? null,
+    width: rect?.w ?? null,
+    height: rect?.h ?? null,
+  });
+}
+
+export async function apiClosePreviewWindow(): Promise<void> {
+  await invoke("cmd_close_preview_window");
 }
 
 export async function apiCheckForUpdates(): Promise<UpdateCheckResult> {

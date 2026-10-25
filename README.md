@@ -7,7 +7,7 @@
 **Windows를 위한 고성능 4분할(Quad-Pane) 전문가용 파일 탐색기**
 
 [![Developer](https://img.shields.io/badge/Developer-Lebi__Cybereun-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/cybereun)
-[![Release](https://img.shields.io/badge/Release-v1.1.4-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.1.5-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/cybereun/J-Dir/releases)
 [![Tech Stack](https://img.shields.io/badge/Built%20With-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-f59e0b?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/cybereun/J-Dir)
 
@@ -54,7 +54,10 @@
 - **프리셋 & 즐겨찾기 관리**: 현재 4개 패널의 경로와 분할 구성을 프리셋으로 저장·복원하고, 자주 사용하는 폴더와 Windows 특수 폴더(`Desktop`, `Downloads`, `Documents`, `AppData` 등)에 빠르게 접근할 수 있습니다.
 
 ### 7. 우측 파일 미리보기 (`[Vorschau]`) & 돋보기 HUD (`Lupe`)
-- **실시간 미리보기 패널**: 파일을 선택하면 이미지, 텍스트/소스 코드, 오디오/비디오, 또는 바이너리 HEX 덤프를 우측 패널에서 즉시 미리 볼 수 있습니다.
+- **실시간 미리보기 패널**: 파일을 선택하면 이미지, 텍스트/소스 코드, 또는 바이너리 HEX 덤프를 우측 패널에서 즉시 미리 볼 수 있습니다.
+- **문서 원본 레이아웃**: PDF·HWP·HWPX를 원본 모양 그대로 페이지 단위로 보여주며, 이전/다음 버튼·페이지 번호 입력·방향키로 모든 페이지를 넘겨볼 수 있습니다.
+- **문서 텍스트 보기**: HWP/HWPX/PDF/DOC/DOCX/XLS/XLSX/PPT/PPTX/ODT/ODS/RTF를 파싱(kordoc)하여 표와 함께 텍스트로 보여주고, 드래그 선택·전체 복사·문서 내 찾기를 지원합니다.
+- **사이드바 ↔ 팝업 창**: 미리보기는 기본 사이드바이며, 버튼 한 번으로 별도 창으로 분리되어 바탕화면 어디든 옮기고 크기를 조절할 수 있습니다. 다시 누르면 사이드바로 돌아옵니다.
 - **화면 배율 & 돋보기 (Lupe)**: 상단 줌 컨트롤(`85%~150%`) 및 플로팅 돋보기 HUD를 통해 선택된 항목 정보를 크게 확인할 수 있습니다.
 
 ### 8. 전문가용 하단 상태 표시줄 (Global Status Footer) & 목록 내보내기
@@ -66,6 +69,11 @@
 - **`지금 업데이트 설치 및 재시작`** 클릭 한 번으로 최신 설치 파일을 다운로드·설치한 후 앱을 자동으로 재시작합니다. (상단 타이틀 옆 `UP` 아이콘 버튼으로 수동 확인도 가능)
 
 ---
+
+## v1.1.5 변경 사항
+- **문서 미리보기**: EveryFile의 PDF/HWP/HWPX 원본 레이아웃 뷰어와 문서 텍스트 파서(kordoc)를 이식. DOC/XLS/PPT 등 주요 문서와 모든 일반 이미지 형식을 미리보기하고, 페이지 넘기기 버튼을 제공합니다.
+- **미리보기 창**: 사이드바 폭 조절, 별도 창 팝업(바탕화면 어디든 이동·크기 조절)과 사이드바 복귀 전환.
+- 설치 파일에 문서 파서(`jdir-parser.exe`, 약 105MB)가 포함됩니다. 소스에서 빌드하려면 `src-tauri/resources/jdir-parser.exe`가 필요합니다(저장소에는 포함되지 않음).
 
 ## v1.1.4 변경 사항
 

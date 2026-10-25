@@ -1,7 +1,7 @@
 {
   "name": "j-dir",
   "private": true,
-  "version": "1.1.4",
+  "version": "1.1.5",
   "type": "module",
   "scripts": {
     "dev": "vite -c C:/Users/cybereun/AppData/Local/J-Dir-Cache/vite.config.mjs",
@@ -10,9 +10,11 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@rhwp/core": "0.7.19",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.4.1",
     "lucide-react": "^0.468.0",
+    "pdfjs-dist": "6.2.108",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

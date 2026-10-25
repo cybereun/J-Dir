@@ -72,6 +72,7 @@
 - **`지금 업데이트 설치 및 재시작`** 클릭 한 번으로 최신 설치 파일을 다운로드·설치한 후 앱을 자동으로 재시작합니다. (상단 타이틀 옆 `UP` 아이콘 버튼으로 수동 확인도 가능)
 
 ### 9-1. 문서 본문 검색 (색인 검색)
+- **아이디어 출처**: 이 검색 기능은 [@chrisryugj](https://github.com/chrisryugj)의 **Anything**(Docufinder)의 사용 방식에서 아이디어를 얻어 제작했습니다.
 - **검색 탭**: 미리보기 창의 [검색] 탭에서 색인 폴더를 추가하면, 파일 이름을 몰라도 **문서 안의 내용**으로 찾을 수 있습니다. 결과에는 일치한 문장이 강조되어 보이고, 결과를 클릭하면 아래에서 문서 내용과 검색어 위치를 바로 확인할 수 있습니다.
 - **색인 대상**: `txt`, `md`, `markdown`, `hwp`, `hwpx`, `hml`, `hwpml`, `pdf`, `xlsx`, `docx`, `doc`, `xls`, `ppt`, `pptx`. 사용자가 고른 폴더만 색인하며, 변경된 파일만 다시 처리합니다.
 - **암호화된 색인 DB**: 색인은 SQLCipher로 암호화된 로컬 DB에 저장되고 키는 Windows 계정(DPAPI)에 묶여 보호됩니다. 문서 내용은 PC 밖으로 전송되지 않습니다.
@@ -217,6 +218,11 @@ J-Dir의 문서 미리보기 기능은 다음 오픈소스 프로젝트를 사�
 
 kordoc은 OpenDataLoader PDF(Hancom, Apache-2.0)와 hml-equation-parser(Open Bapul, Apache-2.0)에서 파생된 코드를 포함하며, 문서 파서는 cfb·JSZip 등의 라이브러리와 함께 `jdir-parser.exe`로 묶여 배포됩니다.
 라이선스 전문과 전체 목록은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 확인하세요.
+
+### 아이디어 출처 (Acknowledgements)
+
+- **문서 본문 검색 기능**은 [@chrisryugj](https://github.com/chrisryugj)의 **[Anything (Docufinder)](https://github.com/chrisryugj/Docufinder)** 의 사용 방식에서 아이디어를 얻어 제작했습니다. 폴더를 색인해 두고 파일 이름을 몰라도 문서 내용으로 찾는 흐름을 참고했으며, J-Dir에는 Anything의 소스 코드·아이콘·이미지·문서를 포함하지 않고 별도로 구현했습니다. Anything의 저작권과 라이선스는 원 프로젝트에 있습니다.
+- 문서 파서 **kordoc**도 같은 저자(@chrisryugj)의 오픈소스 프로젝트입니다.
 
 ---
 

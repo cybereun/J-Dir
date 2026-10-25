@@ -8,6 +8,18 @@ J-Dir는 아래의 오픈소스 소프트웨어를 사용합니다. 각 구성 �
 J-Dir uses the open-source software listed below. Copyright and licensing of each
 component remain with its original authors; their notices are preserved verbatim.
 
+## 아이디어 출처 / Design reference (not a bundled dependency)
+
+J-Dir의 문서 본문 검색 기능은 [@chrisryugj](https://github.com/chrisryugj)의
+[Anything (Docufinder)](https://github.com/chrisryugj/Docufinder)의 사용 방식에서 아이디어를 얻어 별도로
+구현했습니다. J-Dir 배포본에는 Anything의 소스 코드, 아이콘, 이미지, 브랜드 또는 문서를 포함하지 않으며,
+이 고지는 Anything 저작물에 대한 사용 권한을 부여하지 않습니다. 저작권과 라이선스는 원 프로젝트에 있습니다.
+
+The full-text search feature of J-Dir was implemented separately, inspired by how @chrisryugj's Anything
+(Docufinder) is used. J-Dir does not bundle Anything's source code, icons, images, branding or documentation,
+and this acknowledgement grants no rights to Anything's works; copyright and licensing remain with the original
+project.
+
 ## 요약 / Summary
 
 | 구성 요소 / Component | 저작권자 / Copyright | 라이선스 / License | J-Dir에서의 용도 / Used for |

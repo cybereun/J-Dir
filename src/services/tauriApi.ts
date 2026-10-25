@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   ClipboardFiles,
@@ -388,6 +388,12 @@ export async function apiReadFilePreview(
 export async function apiReadFileBytes(path: string, maxBytes?: number): Promise<Uint8Array> {
   const buf = await invoke<ArrayBuffer>("cmd_read_file_bytes", { path, maxBytes: maxBytes ?? null });
   return new Uint8Array(buf);
+}
+
+/** URL the WebView can stream (Range requests) for audio/video; only this one file is made readable. */
+export async function apiStreamUrl(path: string): Promise<string> {
+  await invoke("cmd_allow_preview_stream", { path });
+  return convertFileSrc(path);
 }
 
 export async function apiParseDocument(path: string): Promise<ParsedDocument> {

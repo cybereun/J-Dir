@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { apiReadFileBytes } from "../../services/tauriApi";
 import { PageToolbar, pagingKeyHandler } from "./PageToolbar";
+import { usePanScroll } from "./usePanScroll";
 
 const MAX_CANVAS_DIMENSION = 8192;
 const MAX_CANVAS_PIXELS = 16_000_000;
@@ -43,6 +44,9 @@ function pdfErrorMessage(err: unknown): string {
 export const PdfLayoutView: React.FC<{ path: string }> = ({ path }) => {
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pan = usePanScroll(scrollRef, { textSelector: ".pdf-text-layer > span" });
+  const { className: panClass, ...panRest } = pan.panProps;
   const [doc, setDoc] = useState<PdfDocumentLike | null>(null);
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(1);
@@ -162,7 +166,7 @@ export const PdfLayoutView: React.FC<{ path: string }> = ({ path }) => {
   const goto = (p: number) => {
     setTextItems([]);
     setPage(Math.min(doc.numPages, Math.max(1, p)));
-    container.current?.querySelector(".layout-scroll")?.scrollTo({ top: 0 });
+    scrollRef.current?.scrollTo({ top: 0, left: 0 });
   };
   const zoomBy = (delta: number) => {
     const current = fitWidth ? effectiveScale : zoom;
@@ -181,9 +185,11 @@ export const PdfLayoutView: React.FC<{ path: string }> = ({ path }) => {
         onZoomIn={() => zoomBy(0.25)}
         onZoomOut={() => zoomBy(-0.25)}
         zoomLabel={`${Math.round((fitWidth ? effectiveScale : zoom) * 100)}%`}
+        handMode={pan.handMode}
+        onToggleHand={pan.toggleHand}
       />
       {error && <div className="preview-message preview-message--error">{error}</div>}
-      <div className="layout-scroll pdf-scroll">
+      <div ref={scrollRef} {...panRest} className={`layout-scroll pdf-scroll ${panClass}`}>
         <div className="pdf-page-surface">
           <canvas ref={canvas} />
           <div className="pdf-text-layer">

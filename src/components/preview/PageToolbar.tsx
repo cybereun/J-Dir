@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Maximize, ZoomIn, ZoomOut } from "lucide-react";
+import { Hand, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Maximize, ZoomIn, ZoomOut } from "lucide-react";
 
 interface PageToolbarProps {
   page: number;
@@ -10,10 +10,12 @@ interface PageToolbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   zoomLabel: string;
+  handMode?: boolean;
+  onToggleHand?: () => void;
 }
 
 export const PageToolbar: React.FC<PageToolbarProps> = ({
-  page, pageCount, onPage, fitWidth, onFit, onZoomIn, onZoomOut, zoomLabel,
+  page, pageCount, onPage, fitWidth, onFit, onZoomIn, onZoomOut, zoomLabel, handMode, onToggleHand,
 }) => {
   const [draft, setDraft] = useState(String(page));
   useEffect(() => setDraft(String(page)), [page]);
@@ -63,6 +65,16 @@ export const PageToolbar: React.FC<PageToolbarProps> = ({
       <button type="button" className={`mini-ghost-btn ${fitWidth ? "is-on" : ""}`} title="너비 맞춤" onClick={onFit}>
         <Maximize size={13} />
       </button>
+      {onToggleHand && (
+        <button
+          type="button"
+          className={`mini-ghost-btn ${handMode ? "is-on" : ""}`}
+          title="손바닥 이동 모드 — 글자 위에서도 드래그로 이동 (Space 키를 누른 채 드래그해도 됩니다)"
+          onClick={onToggleHand}
+        >
+          <Hand size={13} />
+        </button>
+      )}
     </div>
   );
 };

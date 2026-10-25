@@ -7,6 +7,8 @@ import { previewKindOf } from "../utils/docKinds";
 import { EntryGraphic3DIcon, Folder3DIcon } from "./GraphicIcons";
 import { DocumentPreview } from "./preview/DocumentPreview";
 import { ImageView } from "./preview/ImageView";
+import { AudioView } from "./preview/AudioView";
+import { VideoView } from "./preview/VideoView";
 
 interface PreviewPanelProps {
   selectedEntry: FileEntry | null;
@@ -74,7 +76,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ selectedEntry, mode,
   useEffect(() => {
     setPreviewData(null);
     setError(null);
-    if (!selectedEntry || kind === "image" || kind === "layout-doc" || kind === "text-doc") {
+    if (!selectedEntry || kind === "image" || kind === "audio" || kind === "video" || kind === "layout-doc" || kind === "text-doc") {
       setLoading(false);
       return;
     }
@@ -155,6 +157,18 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ selectedEntry, mode,
           {kind === "image" && (
             <div className="preview-viewer-body no-pad">
               <ImageView path={selectedEntry.path} name={selectedEntry.name} />
+            </div>
+          )}
+
+          {kind === "video" && (
+            <div className="preview-viewer-body no-pad">
+              <VideoView path={selectedEntry.path} name={selectedEntry.name} />
+            </div>
+          )}
+
+          {kind === "audio" && (
+            <div className="preview-viewer-body no-pad">
+              <AudioView path={selectedEntry.path} name={selectedEntry.name} />
             </div>
           )}
 

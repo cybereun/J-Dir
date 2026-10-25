@@ -189,6 +189,19 @@ fn cmd_parse_document(app: AppHandle, path: String) -> Result<serde_json::Value,
     Ok(doc)
 }
 
+/// Grants the asset protocol read access to exactly one file so the WebView can stream it
+/// (audio/video preview with Range requests) without loading it into memory.
+#[tauri::command(async)]
+fn cmd_allow_preview_stream(app: AppHandle, path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.is_file() {
+        return Err("파일을 찾을 수 없습니다.".to_string());
+    }
+    app.asset_protocol_scope()
+        .allow_file(p)
+        .map_err(|e| format!("스트리밍 허용 실패: {}", e))
+}
+
 const PREVIEW_WINDOW: &str = "preview";
 
 /// Opens (or focuses) the detached preview window. It is a real OS window, so it can be
@@ -383,6 +396,7 @@ pub fn run() {
             cmd_read_file_preview,
             cmd_read_file_bytes,
             cmd_parse_document,
+            cmd_allow_preview_stream,
             cmd_open_preview_window,
             cmd_close_preview_window,
             cmd_check_for_updates,

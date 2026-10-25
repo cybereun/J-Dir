@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
 import { apiReadFileBytes } from "../../services/tauriApi";
 import { fileExt, imageMime } from "../../utils/docKinds";
+import { usePanScroll } from "./usePanScroll";
 
 export const ImageView: React.FC<{ path: string; name: string }> = ({ path, name }) => {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number | "fit">("fit");
+  const stageRef = useRef<HTMLDivElement>(null);
+  const pan = usePanScroll(stageRef);
+  const { className: panClass, ...panRest } = pan.panProps;
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +66,7 @@ export const ImageView: React.FC<{ path: string; name: string }> = ({ path, name
           100%
         </button>
       </div>
-      <div className="image-scroll-stage">
+      <div ref={stageRef} {...panRest} className={`image-scroll-stage ${panClass}`}>
         <img
           src={url}
           alt={name}

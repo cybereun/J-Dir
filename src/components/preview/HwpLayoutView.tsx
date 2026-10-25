@@ -3,6 +3,7 @@ import initRhwp, { HwpDocument } from "@rhwp/core";
 import wasmUrl from "@rhwp/core/rhwp_bg.wasm?url";
 import { apiReadFileBytes } from "../../services/tauriApi";
 import { PageToolbar, pagingKeyHandler } from "./PageToolbar";
+import { usePanScroll } from "./usePanScroll";
 
 let rhwpReady: Promise<unknown> | null = null;
 
@@ -70,6 +71,8 @@ interface HwpLayoutViewProps {
 
 export const HwpLayoutView: React.FC<HwpLayoutViewProps> = ({ path, onUnsupported }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pan = usePanScroll(scrollRef);
+  const { className: panClass, ...panRest } = pan.panProps;
   const [hwp, setHwp] = useState<HwpDocumentLike | null>(null);
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(1);
@@ -125,7 +128,7 @@ export const HwpLayoutView: React.FC<HwpLayoutViewProps> = ({ path, onUnsupporte
   const pageCount = Math.max(1, hwp.pageCount());
   const goto = (p: number) => {
     setPage(Math.min(pageCount, Math.max(1, p)));
-    scrollRef.current?.scrollTo({ top: 0 });
+    scrollRef.current?.scrollTo({ top: 0, left: 0 });
   };
   const zoomBy = (delta: number) => {
     setZoom((z) => Math.min(3, Math.max(0.4, (fitWidth ? 1 : z) + delta)));
@@ -143,9 +146,11 @@ export const HwpLayoutView: React.FC<HwpLayoutViewProps> = ({ path, onUnsupporte
         onZoomIn={() => zoomBy(0.15)}
         onZoomOut={() => zoomBy(-0.15)}
         zoomLabel={fitWidth ? "맞춤" : `${Math.round(zoom * 100)}%`}
+        handMode={pan.handMode}
+        onToggleHand={pan.toggleHand}
       />
       {rendered.error && <div className="preview-message preview-message--error">{rendered.error}</div>}
-      <div className="layout-scroll hwp-scroll" ref={scrollRef}>
+      <div ref={scrollRef} {...panRest} className={`layout-scroll hwp-scroll ${panClass}`}>
         <div
           className={`hwp-page${fitWidth ? " is-fit" : ""}`}
           style={fitWidth ? undefined : { width: `${zoom * 100}%` }}

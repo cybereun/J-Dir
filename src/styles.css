@@ -2440,3 +2440,10 @@ body.col-resizing * {
 .theme-light .search-tab .doc-find,
 .theme-light .search-tab .preview-mode-tabs,
 .theme-light .search-tab .page-toolbar { background: #ffffff; }
+
+.st-splitter { flex: none; height: 7px; cursor: ns-resize; touch-action: none; background: var(--bg-elevated); border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); position: relative; }
+.st-splitter::after { content: ""; position: absolute; left: 50%; top: 50%; width: 36px; height: 3px; transform: translate(-50%, -50%); border-radius: 2px; background: var(--text-muted); opacity: 0.55; }
+.st-splitter:hover, .st-splitter:active { background: var(--bg-selected); }
+.st-splitter:hover::after, .st-splitter:active::after { background: var(--accent-primary); opacity: 1; }
+.theme-light .search-tab .st-splitter { background: #f4f5f7; }
+.st-results { border-bottom: none; }

@@ -32,6 +32,9 @@ import { TextEntryView } from "../preview/TextEntryView";
 const MARK_OPEN = "";
 const MARK_CLOSE = "";
 const PAGE = 50;
+const SPLIT_KEY = "jdir.searchSplitH";
+const RESULTS_MIN = 80;
+const PREVIEW_MIN = 160;
 
 const EXT_GROUPS: { label: string; exts: string[] }[] = [
   { label: "모든 형식", exts: [] },
@@ -98,6 +101,60 @@ export const SearchTab: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<SearchHit | null>(null);
   const searchSeq = useRef(0);
+
+  // Draggable divider between the result list and the document preview (height persisted).
+  const [resultsH, setResultsH] = useState<number | null>(() => {
+    try {
+      const v = Number(localStorage.getItem(SPLIT_KEY));
+      return Number.isFinite(v) && v >= RESULTS_MIN ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  const resultsRef = useRef<HTMLElement>(null);
+  const previewRef = useRef<HTMLElement>(null);
+
+  const saveSplit = (h: number | null) => {
+    try {
+      if (h === null) localStorage.removeItem(SPLIT_KEY);
+      else localStorage.setItem(SPLIT_KEY, String(Math.round(h)));
+    } catch {
+      /* storage unavailable */
+    }
+  };
+
+  const beginSplit = (e: React.PointerEvent) => {
+    const results = resultsRef.current;
+    const preview = previewRef.current;
+    if (e.button !== 0 || !results || !preview) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = results.getBoundingClientRect().height;
+    // Growing the list may only take the space the preview can give up.
+    const maxH = startH + Math.max(0, preview.getBoundingClientRect().height - PREVIEW_MIN);
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
+    let latest = startH;
+    const onMove = (ev: PointerEvent) => {
+      latest = Math.min(maxH, Math.max(RESULTS_MIN, startH + (ev.clientY - startY)));
+      setResultsH(latest);
+    };
+    let finished = false;
+    const onUp = () => {
+      if (finished) return;
+      finished = true;
+      target.removeEventListener("pointermove", onMove);
+      target.removeEventListener("pointerup", onUp);
+      target.removeEventListener("pointercancel", onUp);
+      target.removeEventListener("lostpointercapture", onUp);
+      saveSplit(latest);
+    };
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp);
+    target.addEventListener("pointercancel", onUp);
+    // Releasing the button outside the window can end the capture without a pointerup.
+    target.addEventListener("lostpointercapture", onUp);
+  };
 
   const refreshFolders = useCallback(async () => {
     try {
@@ -343,7 +400,7 @@ export const SearchTab: React.FC = () => {
       </section>
 
       {/* 3. Results */}
-      <section className="st-results">
+      <section className="st-results" ref={resultsRef} style={resultsH !== null ? { flex: "0 0 auto", height: resultsH, minHeight: 0 } : undefined}>
         {response && hits.length === 0 && !searching && (
           <div className="st-empty">
             {totalDocs === 0 ? "색인된 문서가 없습니다. 폴더를 추가해 주세요." : "검색 결과가 없습니다."}
@@ -392,8 +449,18 @@ export const SearchTab: React.FC = () => {
         )}
       </section>
 
+      <div
+        className="st-splitter"
+        onPointerDown={beginSplit}
+        onDoubleClick={() => {
+          setResultsH(null);
+          saveSplit(null);
+        }}
+        title="드래그하여 결과 목록과 미리보기의 높이 조절 · 더블클릭으로 초기화"
+      />
+
       {/* 4. Preview of the selected result */}
-      <section className="st-preview">
+      <section className="st-preview" ref={previewRef}>
         {selectedEntry ? (
           <>
             <div className="st-preview-title" title={selectedEntry.path}>

@@ -530,6 +530,8 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
 
   /** Drop-target handlers for a folder path (pane body, folder rows, breadcrumbs, drives, "..") */
   const dropHandlers = (destPath: string, key: string) => ({
+    "data-drop-path": destPath,
+    "data-drop-key": key,
     onDragOver: (e: React.DragEvent) => {
       if (!isJdirDrag(e)) return;
       e.preventDefault();
@@ -728,6 +730,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   return (
     <section
       ref={sectionRef}
+      data-pane-index={pane.index}
       className={`explorer-pane ${isFocused ? "focused-pane" : ""} ${
         dropHover === "__pane__" ? "drag-over-pane" : ""
       }`}

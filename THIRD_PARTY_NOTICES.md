@@ -33,9 +33,21 @@ project.
 | JSZip | Stuart Knightley 외 | MIT | zip 기반 문서 읽기 (파서에 포함) |
 | @xmldom/xmldom, markdown-it, zod | 각 저작자 | MIT | 문서 파서 내부 의존성 |
 | Node.js 런타임 | Node.js contributors | MIT | 문서 파서 실행 환경 (단일 실행 파일로 포장) |
+| [drag](https://github.com/crabnebula-dev/drag-rs) | CrabNebula Ltd. | MIT OR Apache-2.0 | 파일을 다른 프로그램으로 끌어갈 때 Windows 기본 드래그(OLE) 시작 (`src-tauri/vendor/drag`에 포함·수정) |
 
 문서 파서(`jdir-parser.exe`)는 kordoc과 위 의존 라이브러리를 하나의 실행 파일로 묶은 것입니다.
 `jdir-parser.exe` bundles kordoc and the libraries above into a single executable.
+
+---
+
+## drag (vendored) — MIT OR Apache-2.0
+
+`src-tauri/vendor/drag`는 CrabNebula Ltd.의 `drag` 2.1.1을 Windows 전용으로 줄여 가져온 사본입니다.
+J-Dir에서 복사와 이동을 모두 허용하는 `DragMode::CopyMove`를 추가했습니다. 원본 라이선스 전문(`LICENSE_MIT`,
+`LICENSE_APACHE-2.0`)과 변경 내용(`README-JDIR.md`)은 해당 폴더에 그대로 있습니다.
+
+`src-tauri/vendor/drag` is a Windows-only trimmed copy of `drag` 2.1.1 by CrabNebula Ltd. J-Dir adds
+`DragMode::CopyMove` (allow both copy and move). The original license files and a change note are in that folder.
 
 ---
 

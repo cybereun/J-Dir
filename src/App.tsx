@@ -50,7 +50,9 @@ import { DirectoryTree } from "./components/DirectoryTree";
 import { ExplorerPane } from "./components/ExplorerPane";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { emit, listen } from "@tauri-apps/api/event";
-import { apiClosePreviewWindow, apiFocusMainWindow, apiOpenPreviewWindow } from "./services/tauriApi";
+import { apiClosePreviewWindow, apiFocusMainWindow, apiModifierKeys, apiOpenPreviewWindow } from "./services/tauriApi";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { dragIncludesDestination, dropModeForPaths } from "./utils/dragDrop";
 import { PREVIEW_EVENTS, PREVIEW_MODE_KEY, loadWinRect } from "./utils/previewWindow";
 import { GlobalFooter } from "./components/GlobalFooter";
 import { JobPanel } from "./components/JobPanel";
@@ -864,6 +866,7 @@ export const App: React.FC = () => {
     [panes, executeTransfer]
   );
 
+  const handleDropToPathRef = useRef<(destDir: string, paths: string[], mode: "copy" | "move") => void>(() => undefined);
   const handleDropToPath = useCallback(
     (destDir: string, paths: string[], mode: "copy" | "move") => {
       executeTransfer(
@@ -875,6 +878,8 @@ export const App: React.FC = () => {
     },
     [executeTransfer]
   );
+
+  handleDropToPathRef.current = handleDropToPath;
 
   const handleZip = useCallback(
     async (paths: string[], baseDir: string, suggestedName: string) => {
@@ -1550,6 +1555,72 @@ export const App: React.FC = () => {
         );
     }
   };
+
+  // Files dropped by the OS onto the window: from Explorer / the desktop / other apps, and from J-Dir's
+  // own native drags. The OS reports paths and a pixel position; the target is whatever drop target
+  // (pane, folder row, breadcrumb, drive, tree node) is under the pointer, with Explorer's modifier rules.
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
+
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let disposed = false;
+    let hovered: Element | null = null;
+    let hoveredClass = "drop-hover";
+    const clearHover = () => {
+      hovered?.classList.remove(hoveredClass);
+      hovered = null;
+    };
+    const targetAt = (x: number, y: number): HTMLElement | null => {
+      const scale = window.devicePixelRatio || 1;
+      const el = document.elementFromPoint(x / scale, y / scale);
+      return (el?.closest("[data-drop-path]") as HTMLElement | null) ?? null;
+    };
+    try {
+      void getCurrentWebview()
+        .onDragDropEvent((event) => {
+          const p = event.payload;
+          if (p.type === "leave") {
+            clearHover();
+            return;
+          }
+          const target = targetAt(p.position.x, p.position.y);
+          if (p.type === "enter" || p.type === "over") {
+            if (target !== hovered) {
+              clearHover();
+              if (target) {
+                hoveredClass = target.dataset.dropKey === "__pane__" ? "drag-over-pane" : "drop-hover";
+                target.classList.add(hoveredClass);
+                hovered = target;
+              }
+            }
+            return;
+          }
+          // drop
+          clearHover();
+          const dest = target?.dataset.dropPath;
+          if (!dest || p.paths.length === 0) return;
+          const paneEl = target?.closest("[data-pane-index]") as HTMLElement | null;
+          if (paneEl) setActiveFocus(Number(paneEl.dataset.paneIndex));
+          if (dragIncludesDestination(p.paths, dest)) {
+            notifyRef.current("폴더를 자기 자신 또는 하위 폴더로 옮길 수 없습니다.", true);
+            return;
+          }
+          void apiModifierKeys()
+            .catch(() => ({ ctrl: false, shift: false, alt: false }))
+            .then((keys) => handleDropToPathRef.current(dest, p.paths, dropModeForPaths(keys, p.paths, dest)));
+        })
+        .then((fn) => (disposed ? fn() : (off = fn)))
+        .catch(() => undefined);
+    } catch {
+      /* not running inside Tauri (browser preview) */
+    }
+    return () => {
+      disposed = true;
+      clearHover();
+      off?.();
+    };
+  }, []);
 
   // "Show in pane" requests from the search tab (possibly from the detached preview window):
   // navigate the active pane to the file's folder, then select the file once the list has loaded.

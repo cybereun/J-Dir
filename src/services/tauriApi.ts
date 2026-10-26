@@ -415,6 +415,20 @@ export async function apiReadFileBytes(path: string, maxBytes?: number): Promise
 }
 
 /** Asks the main window to show `path` (navigate the active pane to its folder and select it). */
+export function isTauriRuntimeAvailable(): boolean {
+  return isTauriRuntime();
+}
+
+/** Starts an OS-level file drag; resolves when the drag ends (dropped or cancelled). */
+export async function apiStartNativeDrag(paths: string[]): Promise<void> {
+  await invoke("cmd_start_drag", { paths });
+}
+
+export async function apiModifierKeys(): Promise<{ ctrl: boolean; shift: boolean; alt: boolean }> {
+  const [ctrl, shift, alt] = await invoke<[boolean, boolean, boolean]>("cmd_modifier_keys");
+  return { ctrl, shift, alt };
+}
+
 export async function apiRevealInPane(path: string): Promise<void> {
   await emit("jdir://reveal-file", { path });
 }

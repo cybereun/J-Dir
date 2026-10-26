@@ -59,6 +59,8 @@ function makeTreeDropProps(
   afterDrop?: () => void
 ) {
   return {
+    "data-drop-path": destPath,
+    "data-drop-key": "tree",
     onDragOver: (e: React.DragEvent) => {
       if (!onDropItems || !isJdirDrag(e)) return;
       e.preventDefault();

@@ -80,7 +80,51 @@ impl IDropSource_Impl for DropSource {
     }
 
     fn GiveFeedback(&self, _dweffect: DROPEFFECT) -> HRESULT {
+        // J-Dir addition: the webview's drop target always answers "copy", so while Shift (move) is
+        // held over our own window we draw the plain "move" cursor ourselves (no "+").
+        if unsafe { show_move_cursor_over_own_window() } {
+            return S_OK;
+        }
         DRAGDROP_S_USEDEFAULTCURSORS
+    }
+}
+
+/// Returns true when it set the cursor itself.
+unsafe fn show_move_cursor_over_own_window() -> bool {
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_SHIFT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetAncestor, GetWindowThreadProcessId, LoadCursorW, SetCursor, WindowFromPoint, GA_ROOT,
+    };
+
+    if (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 == 0 {
+        return false;
+    }
+    let mut pt = POINT { x: 0, y: 0 };
+    if GetCursorPos(&mut pt).is_err() {
+        return false;
+    }
+    let hwnd = WindowFromPoint(pt);
+    if hwnd.0 == 0 {
+        return false;
+    }
+    let root = GetAncestor(hwnd, GA_ROOT);
+    let mut pid = 0u32;
+    GetWindowThreadProcessId(root, Some(&mut pid));
+    if pid != GetCurrentProcessId() {
+        return false;
+    }
+    // ole32.dll carries the system drag cursors: 1 = none, 2 = move, 3 = copy, 4 = link.
+    let Ok(ole32) = GetModuleHandleW(w!("ole32.dll")) else {
+        return false;
+    };
+    match LoadCursorW(windows::Win32::Foundation::HINSTANCE(ole32.0), PCWSTR(2usize as *const u16)) {
+        Ok(cursor) => {
+            SetCursor(cursor);
+            true
+        }
+        Err(_) => false,
     }
 }
 

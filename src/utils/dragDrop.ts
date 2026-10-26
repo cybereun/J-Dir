@@ -14,21 +14,49 @@ let currentDragSourcePane = 0;
 
 type DragLike = Pick<React.DragEvent, "dataTransfer">;
 
-export function beginDrag(e: React.DragEvent, sourcePaneIndex: number, paths: string[]): void {
+/** Hands the drag to Windows so other programs receive the actual files (and J-Dir's own panes too). */
+export function beginNativeDrag(sourcePaneIndex: number, paths: string[], allowMove: boolean): void {
   currentDragPaths = paths;
   currentDragSourcePane = sourcePaneIndex;
+  void apiStartNativeDrag(paths, allowMove)
+    .catch(() => undefined)
+    .finally(() => endDrag());
+}
+
+export function beginDrag(e: React.DragEvent, sourcePaneIndex: number, paths: string[]): void {
   if (isTauriRuntimeAvailable()) {
-    // Hand the drag to Windows so other programs receive the actual files (browser upload areas,
-    // messengers, desktop, Explorer folders). It also works for drops onto J-Dir's own panes.
     e.preventDefault();
-    void apiStartNativeDrag(paths)
-      .catch(() => undefined)
-      .finally(() => endDrag());
+    beginNativeDrag(sourcePaneIndex, paths, e.shiftKey);
     return;
   }
+  currentDragPaths = paths;
+  currentDragSourcePane = sourcePaneIndex;
   e.dataTransfer.setData(DND_MIME, JSON.stringify({ sourcePaneIndex, paths }));
   e.dataTransfer.setData("text/plain", paths.join("\n"));
   e.dataTransfer.effectAllowed = "copyMove";
+}
+
+/**
+ * Holding Shift while pressing the mouse button stops the webview from ever firing `dragstart`
+ * (it treats it as "extend selection"), so Shift+drag (move) would never begin. Watch the mouse
+ * ourselves and start the OS drag once the pointer has moved a few pixels.
+ */
+export function watchShiftDrag(e: React.MouseEvent, sourcePaneIndex: number, paths: string[]): void {
+  if (e.button !== 0 || !e.shiftKey || !isTauriRuntimeAvailable()) return;
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const cleanup = () => {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", cleanup);
+  };
+  const onMove = (ev: MouseEvent) => {
+    if ((ev.buttons & 1) === 0) return cleanup();
+    if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
+    cleanup();
+    beginNativeDrag(sourcePaneIndex, paths, true);
+  };
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", cleanup);
 }
 
 export function endDrag(): void {
@@ -64,35 +92,27 @@ export function isSameOrInside(candidate: string, ancestor: string): boolean {
 }
 
 /**
- * Explorer-style default: Ctrl = copy, Shift = move,
- * otherwise move within the same drive and copy across drives.
+ * Plain drag = copy, Shift = move (Ctrl also copies). The same rule applies wherever the drop lands
+ * inside J-Dir, regardless of which drive the files are on.
  */
 export function dropModeFor(
   e: Pick<React.DragEvent, "ctrlKey" | "shiftKey">,
-  destPath: string
+  _destPath: string
 ): DropMode {
   if (e.ctrlKey) return "copy";
-  if (e.shiftKey) return "move";
-  const first = currentDragPaths[0];
-  if (first && getDriveRoot(first).toLowerCase() === getDriveRoot(destPath).toLowerCase()) {
-    return "move";
-  }
-  return "copy";
+  return e.shiftKey ? "move" : "copy";
 }
 
 export function dragIncludesDestination(paths: string[], destPath: string): boolean {
   return paths.some((p) => isSameOrInside(destPath, p));
 }
 
-/** Same rule as [`dropModeFor`] for drops reported by the OS (no DOM event, paths known up front). */
+/** Same rule as [`dropModeFor`] for drops reported by the OS (modifier keys read at drop time). */
 export function dropModeForPaths(
   keys: { ctrl: boolean; shift: boolean },
-  paths: string[],
-  destPath: string
+  _paths: string[],
+  _destPath: string
 ): DropMode {
   if (keys.ctrl) return "copy";
-  if (keys.shift) return "move";
-  const first = paths[0];
-  if (first && getDriveRoot(first).toLowerCase() === getDriveRoot(destPath).toLowerCase()) return "move";
-  return "copy";
+  return keys.shift ? "move" : "copy";
 }

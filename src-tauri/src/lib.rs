@@ -305,7 +305,7 @@ const DRAG_ICON: &[u8] = include_bytes!("../icons/64x64.png");
 /// Synchronous on purpose: Tauri runs it on the main thread, which OLE requires, and it returns
 /// when the drag has finished.
 #[tauri::command]
-fn cmd_start_drag(window: tauri::Window, paths: Vec<String>) -> Result<(), String> {
+fn cmd_start_drag(window: tauri::Window, paths: Vec<String>, allow_move: bool) -> Result<(), String> {
     let files: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).filter(|p| p.exists()).collect();
     if files.is_empty() {
         return Err("끌어갈 파일을 찾을 수 없습니다.".to_string());
@@ -315,7 +315,12 @@ fn cmd_start_drag(window: tauri::Window, paths: Vec<String>) -> Result<(), Strin
         drag::DragItem::Files(files),
         drag::Image::Raw(DRAG_ICON.to_vec()),
         |_result, _cursor| {},
-        drag::Options { mode: drag::DragMode::CopyMove, ..Default::default() },
+        // A plain drag copies; starting it with Shift held also allows moving (Explorer then
+        // decides copy/move for outside targets, J-Dir's own panes follow Shift at drop time).
+        drag::Options {
+            mode: if allow_move { drag::DragMode::CopyMove } else { drag::DragMode::Copy },
+            ..Default::default()
+        },
     )
     .map_err(|e| format!("파일 끌기 실패: {}", e))
 }

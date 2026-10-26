@@ -420,8 +420,8 @@ export function isTauriRuntimeAvailable(): boolean {
 }
 
 /** Starts an OS-level file drag; resolves when the drag ends (dropped or cancelled). */
-export async function apiStartNativeDrag(paths: string[]): Promise<void> {
-  await invoke("cmd_start_drag", { paths });
+export async function apiStartNativeDrag(paths: string[], allowMove = false): Promise<void> {
+  await invoke("cmd_start_drag", { paths, allowMove });
 }
 
 export async function apiModifierKeys(): Promise<{ ctrl: boolean; shift: boolean; alt: boolean }> {

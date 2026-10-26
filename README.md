@@ -7,7 +7,7 @@
 **Windows를 위한 고성능 4분할(Quad-Pane) 전문가용 파일 탐색기**
 
 [![Developer](https://img.shields.io/badge/Developer-Lebi__Cybereun-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/cybereun)
-[![Release](https://img.shields.io/badge/Release-v1.2.0-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.2.1-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/cybereun/J-Dir/releases)
 [![Tech Stack](https://img.shields.io/badge/Built%20With-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-f59e0b?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/cybereun/J-Dir)
 
@@ -80,6 +80,13 @@
 - **편의 기능**: 결과 목록·미리보기 경계선 드래그 조절, 사이드바 ↔ 팝업 창 전환 시 검색 상태 유지, [폴더에서 보기]로 J-Dir 패널에서 해당 파일 선택(Shift+클릭: Windows 탐색기).
 
 ---
+
+## v1.2.1 변경 사항
+- **탐색기처럼 끌어다 놓기**: 파일을 끌 때 경로 글자가 아니라 **실제 파일**이 전달됩니다. 브라우저 업로드 칸, 카카오톡, 메일, 바탕화면, Windows 탐색기 폴더에 놓으면 파일이 들어갑니다. (이전에는 브라우저에서 `http://` 오류가 나고 바탕화면·다른 폴더에는 놓이지 않았습니다.)
+- **밖에서 J-Dir로 끌어넣기**: 탐색기·바탕화면에서 J-Dir의 패널, 폴더 줄, 주소 막대, 드라이브 버튼, 트리로 파일을 끌어넣을 수 있습니다.
+- **복사/이동 규칙**: 그냥 드래그 = **복사**, **Shift**+드래그 = **이동**, Ctrl+드래그 = 복사. Shift로 이동할 때는 커서에 + 표시가 없어집니다. J-Dir 안(패널 간·폴더 줄·트리)과 바깥(탐색기·바탕화면) 모두 같은 규칙입니다. 다만 Shift를 누르고 시작한 드래그만 바깥의 탐색기가 같은 드라이브에서 이동으로 처리할 수 있습니다.
+- 알려진 제한: Alt 바로가기 만들기와 마우스 오른쪽 버튼으로 끌 때의 메뉴는 아직 지원하지 않습니다.
+- 검색어의 쉼표·구두점을 단어 구분으로 처리(`1,2학년` = `1, 2학년`).
 
 ## v1.2.0 변경 사항
 - **문서 본문 검색(색인 검색) 탭 추가**: 색인 폴더 추가, 본문 검색, 일치 문장 강조, 결과 미리보기와 검색어 위치 표시. 암호화된 로컬 색인 DB(SQLCipher) 사용.

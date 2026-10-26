@@ -62,6 +62,7 @@ import {
 } from "../utils/colorFilter";
 import {
   beginDrag,
+  watchShiftDrag,
   dragIncludesDestination,
   dropModeFor,
   endDrag,
@@ -526,6 +527,11 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
       ? pane.selectedPaths
       : [entry.path];
     beginDrag(e, pane.index, dragPaths);
+  };
+
+  const handleRowMouseDown = (e: React.MouseEvent, entry: FileEntry) => {
+    const dragPaths = pane.selectedPaths.includes(entry.path) ? pane.selectedPaths : [entry.path];
+    watchShiftDrag(e, pane.index, dragPaths);
   };
 
   /** Drop-target handlers for a folder path (pane body, folder rows, breadcrumbs, drives, "..") */
@@ -1237,6 +1243,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
                       data-idx={idx}
                       draggable={!isRenaming}
                       onDragStart={(e) => handleDragStart(e, entry)}
+                      onMouseDown={(e) => !isRenaming && handleRowMouseDown(e, entry)}
                       onDragEnd={endDrag}
                       {...(entry.isDir ? dropHandlers(entry.path, entry.path) : {})}
                       className={`file-row ${isSelected ? "selected" : ""} ${
@@ -1323,6 +1330,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
                     data-idx={idx}
                     draggable
                     onDragStart={(e) => handleDragStart(e, entry)}
+                    onMouseDown={(e) => handleRowMouseDown(e, entry)}
                     onDragEnd={endDrag}
                     {...(entry.isDir ? dropHandlers(entry.path, entry.path) : {})}
                     className={`file-card ${isSelected ? "selected" : ""} ${

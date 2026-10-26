@@ -170,7 +170,13 @@ fn like_pattern(token: &str) -> String {
 
 pub fn search(conn: &Connection, req: &SearchRequest) -> Result<SearchResponse, String> {
     let started = Instant::now();
-    let tokens: Vec<String> = req.text.split_whitespace().map(|t| t.to_string()).collect();
+    // Punctuation separates words like a space does, so "1,2학년" and "1, 2학년" search the same.
+    let tokens: Vec<String> = req
+        .text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string())
+        .collect();
     if tokens.is_empty() {
         return Ok(SearchResponse { hits: vec![], total: 0, elapsed_ms: 0, tokens });
     }
@@ -366,6 +372,9 @@ mod tests {
         assert!(r.hits[0].snippet.contains(MARK_OPEN), "snippet: {}", r.hits[0].snippet);
         assert_eq!(search(&conn, &req("예산 검토", "keyword")).unwrap().total, 1);
         assert_eq!(search(&conn, &req("예산 없는말", "keyword")).unwrap().total, 0);
+        // punctuation between tokens is treated like a space
+        assert_eq!(search(&conn, &req("예산,검토", "keyword")).unwrap().total, 1);
+        assert_eq!(search(&conn, &req("예산, 검토", "keyword")).unwrap().total, 1);
         // two-character token goes through the LIKE fallback
         assert_eq!(search(&conn, &req("회의", "keyword")).unwrap().total, 1);
         assert_eq!(search(&conn, &req("부크크서식", "filename")).unwrap().total, 1);

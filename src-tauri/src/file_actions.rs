@@ -76,7 +76,56 @@ const CANCEL_MSG: &str = "사용자가 작업을 취소했습니다.";
 const CHUNK_COPY_THRESHOLD: u64 = 8 * 1024 * 1024;
 
 /// Copies one file, reporting progress. Large files are streamed in chunks so the job can be cancelled.
+/// Clears the read-only / hidden / system flags of an existing destination so that an explicit
+/// "overwrite" can replace it. Windows refuses to overwrite such files (access denied), whereas
+/// Explorer clears the flags and goes on; the new file then takes the flags of its source.
+fn clear_blocking_attributes(path: &Path) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            GetFileAttributesW, SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL,
+            FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_SYSTEM, INVALID_FILE_ATTRIBUTES,
+        };
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        // SAFETY: `wide` is a valid NUL-terminated UTF-16 path that outlives both calls.
+        unsafe {
+            let attrs = GetFileAttributesW(wide.as_ptr());
+            if attrs == INVALID_FILE_ATTRIBUTES {
+                return;
+            }
+            let blocking = FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
+            if attrs & blocking != 0 {
+                let cleared = attrs & !blocking;
+                SetFileAttributesW(wide.as_ptr(), if cleared == 0 { FILE_ATTRIBUTE_NORMAL } else { cleared });
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(meta) = fs::metadata(path) {
+            let mut perms = meta.permissions();
+            perms.set_readonly(false);
+            let _ = fs::set_permissions(path, perms);
+        }
+    }
+}
+
+/// Explains an access-denied error in terms of the destination, which is where it usually comes from.
+fn copy_error(action: &str, src: &Path, dst: &Path, e: &std::io::Error) -> String {
+    let hint = if e.raw_os_error() == Some(5) {
+        " — 대상 파일에 쓸 권한이 없거나 다른 프로그램/권한 설정이 막고 있습니다"
+    } else {
+        ""
+    };
+    format!("{} ({} → {}): {}{}", action, src.display(), dst.display(), e, hint)
+}
+
 fn copy_file_progress(src: &Path, dst: &Path, rep: &Reporter) -> Result<(), String> {
+    // An existing destination only reaches this point when the user chose to overwrite it.
+    if dst.exists() && dst.is_file() {
+        clear_blocking_attributes(dst);
+    }
     let meta = fs::metadata(src).map_err(|e| format!("파일 정보 읽기 실패 ({}): {}", src.display(), e))?;
     let name = src
         .file_name()
@@ -86,13 +135,13 @@ fn copy_file_progress(src: &Path, dst: &Path, rep: &Reporter) -> Result<(), Stri
         return Err(CANCEL_MSG.to_string());
     }
     if meta.len() < CHUNK_COPY_THRESHOLD {
-        fs::copy(src, dst).map_err(|e| format!("파일 복사 실패 ({}): {}", src.display(), e))?;
+        fs::copy(src, dst).map_err(|e| copy_error("파일 복사 실패", src, dst, &e))?;
         rep.add_bytes(meta.len(), &name);
         return Ok(());
     }
 
     let mut input = fs::File::open(src).map_err(|e| format!("파일 열기 실패 ({}): {}", src.display(), e))?;
-    let mut output = fs::File::create(dst).map_err(|e| format!("파일 생성 실패 ({}): {}", dst.display(), e))?;
+    let mut output = fs::File::create(dst).map_err(|e| copy_error("파일 생성 실패", src, dst, &e))?;
     let mut buf = vec![0u8; 1024 * 1024];
     loop {
         if rep.is_cancelled() {
@@ -815,5 +864,72 @@ mod tests {
         assert_eq!(mv.skipped.len(), 1);
         assert!(Path::new(&src).exists());
         assert!(!a.path().join("x (1).txt").exists());
+    }
+
+    fn set_readonly(path: &Path, on: bool) {
+        let mut perms = fs::metadata(path).unwrap().permissions();
+        perms.set_readonly(on);
+        fs::set_permissions(path, perms).unwrap();
+    }
+
+    #[test]
+    fn overwrite_replaces_read_only_destination() {
+        let a = tempdir().unwrap();
+        let b = tempdir().unwrap();
+        let b_s = b.path().to_string_lossy().to_string();
+        let src = create_text_file(a.path().to_string_lossy().to_string(), "r.txt".into(), "new".into()).unwrap();
+        let dst = b.path().join("r.txt");
+        fs::write(&dst, "old").unwrap();
+        set_readonly(&dst, true);
+
+        // used to fail with "액세스가 거부되었습니다. (os error 5)"
+        let rep = copy_items(vec![src.clone()], b_s.clone(), "overwrite".into(), &Reporter::noop()).unwrap();
+        assert!(rep.failed.is_empty(), "{:?}", rep.failed.first().map(|f| &f.error));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "new");
+
+        // a read-only SOURCE makes a read-only copy; overwriting that copy again must still work
+        set_readonly(Path::new(&src), true);
+        fs::write(&src.replace("r.txt", "r2.txt"), "v2").ok();
+        let again = copy_items(vec![src.clone()], b_s.clone(), "overwrite".into(), &Reporter::noop()).unwrap();
+        assert!(again.failed.is_empty(), "{:?}", again.failed.first().map(|f| &f.error));
+        assert!(fs::metadata(&dst).unwrap().permissions().readonly());
+        let third = copy_items(vec![src.clone()], b_s, "overwrite".into(), &Reporter::noop()).unwrap();
+        assert!(third.failed.is_empty(), "{:?}", third.failed.first().map(|f| &f.error));
+        set_readonly(Path::new(&src), false);
+        set_readonly(&dst, false);
+    }
+
+    #[test]
+    fn move_overwrite_replaces_read_only_destination() {
+        let a = tempdir().unwrap();
+        let b = tempdir().unwrap();
+        let src = create_text_file(a.path().to_string_lossy().to_string(), "m.txt".into(), "moved".into()).unwrap();
+        let dst = b.path().join("m.txt");
+        fs::write(&dst, "old").unwrap();
+        set_readonly(&dst, true);
+
+        let rep = move_items(vec![src.clone()], b.path().to_string_lossy().to_string(), "overwrite".into(), &Reporter::noop()).unwrap();
+        assert!(rep.failed.is_empty(), "{:?}", rep.failed.first().map(|f| &f.error));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "moved");
+        assert!(!Path::new(&src).exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn overwrite_replaces_hidden_destination() {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM};
+        let a = tempdir().unwrap();
+        let b = tempdir().unwrap();
+        let src = create_text_file(a.path().to_string_lossy().to_string(), "h.txt".into(), "new".into()).unwrap();
+        let dst = b.path().join("h.txt");
+        fs::write(&dst, "old").unwrap();
+        let wide: Vec<u16> = dst.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        // SAFETY: valid NUL-terminated path.
+        unsafe { SetFileAttributesW(wide.as_ptr(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) };
+
+        let rep = copy_items(vec![src], b.path().to_string_lossy().to_string(), "overwrite".into(), &Reporter::noop()).unwrap();
+        assert!(rep.failed.is_empty(), "{:?}", rep.failed.first().map(|f| &f.error));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "new");
     }
 }

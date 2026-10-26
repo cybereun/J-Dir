@@ -17,6 +17,7 @@ use models::{
     DriveInfo, FileActionReport, FileEntry, FilePreviewData, FolderSizeStats, PathPair,
     QDirWorkspaceConfig, SpecialPaths, UpdateCheckResult,
 };
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -282,6 +283,43 @@ fn cmd_focus_main_window(app: AppHandle) -> Result<(), String> {
     w.set_focus().map_err(|e| e.to_string())
 }
 
+/// Ctrl / Shift / Alt state right now. The OS drop event carries no modifier keys, but Explorer's
+/// rules (Ctrl = copy, Shift = move) are decided at the moment of the drop.
+#[tauri::command(async)]
+fn cmd_modifier_keys() -> (bool, bool, bool) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
+        // SAFETY: GetAsyncKeyState has no preconditions.
+        let down = |vk: u16| unsafe { (GetAsyncKeyState(vk as i32) as u16) & 0x8000 != 0 };
+        return (down(VK_CONTROL), down(VK_SHIFT), down(VK_MENU));
+    }
+    #[allow(unreachable_code)]
+    (false, false, false)
+}
+
+const DRAG_ICON: &[u8] = include_bytes!("../icons/64x64.png");
+
+/// Starts a native Windows (OLE) file drag, so other apps (browser upload areas, messengers, the
+/// desktop, Explorer folders, ...) receive real files instead of a path string.
+/// Synchronous on purpose: Tauri runs it on the main thread, which OLE requires, and it returns
+/// when the drag has finished.
+#[tauri::command]
+fn cmd_start_drag(window: tauri::Window, paths: Vec<String>) -> Result<(), String> {
+    let files: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).filter(|p| p.exists()).collect();
+    if files.is_empty() {
+        return Err("끌어갈 파일을 찾을 수 없습니다.".to_string());
+    }
+    drag::start_drag(
+        &window,
+        drag::DragItem::Files(files),
+        drag::Image::Raw(DRAG_ICON.to_vec()),
+        |_result, _cursor| {},
+        drag::Options { mode: drag::DragMode::CopyMove, ..Default::default() },
+    )
+    .map_err(|e| format!("파일 끌기 실패: {}", e))
+}
+
 const PREVIEW_WINDOW: &str = "preview";
 
 /// Opens (or focuses) the detached preview window. It is a real OS window, so it can be
@@ -490,6 +528,8 @@ pub fn run() {
             cmd_index_progress,
             cmd_index_search,
             cmd_focus_main_window,
+            cmd_start_drag,
+            cmd_modifier_keys,
             cmd_open_preview_window,
             cmd_close_preview_window,
             cmd_check_for_updates,

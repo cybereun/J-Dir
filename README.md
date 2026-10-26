@@ -215,6 +215,7 @@ J-Dir의 문서 미리보기 기능은 다음 오픈소스 프로젝트를 사�
 | [kordoc](https://github.com/chrisryugj/kordoc) | chrisryugj | MIT | HWP/HWPX/PDF/Office 문서 텍스트·표 파싱 |
 | [rhwp](https://github.com/edwardkim/rhwp) (`@rhwp/core`) | Edward Kim | MIT | HWP/HWPX 원본 레이아웃 렌더링 |
 | [PDF.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) | Mozilla Foundation | Apache-2.0 | PDF 원본 레이아웃 렌더링 |
+| [drag](https://github.com/crabnebula-dev/drag-rs) | CrabNebula Ltd. | MIT OR Apache-2.0 | 파일을 다른 프로그램으로 끌어갈 때 Windows 기본 드래그 시작 |
 
 kordoc은 OpenDataLoader PDF(Hancom, Apache-2.0)와 hml-equation-parser(Open Bapul, Apache-2.0)에서 파생된 코드를 포함하며, 문서 파서는 cfb·JSZip 등의 라이브러리와 함께 `jdir-parser.exe`로 묶여 배포됩니다.
 라이선스 전문과 전체 목록은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 확인하세요.

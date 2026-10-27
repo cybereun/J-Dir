@@ -10,6 +10,7 @@ pub mod preview;
 pub mod qdir_compat;
 pub mod search;
 pub mod updater;
+pub mod win_state;
 pub mod zipview;
 
 use jobs::Reporter;
@@ -480,8 +481,22 @@ pub fn run() {
     tauri::Builder::default()
         .manage(WatchState::default())
         .manage(index::IndexHolder::default())
+        .manage(win_state::WindowMemory::default())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            win_state::restore(app.handle());
+            Ok(())
+        })
         .on_window_event(|window, event| {
+            if window.label() == win_state::MAIN_WINDOW {
+                match event {
+                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                        win_state::track(window)
+                    }
+                    tauri::WindowEvent::CloseRequested { .. } => win_state::save(window),
+                    _ => {}
+                }
+            }
             if window.label() == PREVIEW_WINDOW {
                 if let tauri::WindowEvent::Destroyed = event {
                     let _ = window.app_handle().emit("jdir://preview-closed", ());

@@ -249,6 +249,21 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>("");
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Like Windows Explorer: when renaming starts, select only the base name, not the extension.
+  useEffect(() => {
+    const input = renameInputRef.current;
+    if (!renamingPath || !input) return;
+    const target = entries.find((e) => e.path === renamingPath);
+    const name = input.value;
+    const dot = name.lastIndexOf(".");
+    const end = target?.isDir || dot <= 0 ? name.length : dot;
+    input.focus();
+    input.setSelectionRange(0, end);
+    // only when renaming begins for a given item, never while the user is typing
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renamingPath]);
 
   // Inline create modal/bar state
   const [creatingMode, setCreatingMode] = useState<"folder" | "file" | null>(null);
@@ -1268,6 +1283,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
                           <input
                             type="text"
                             className="inline-rename-input"
+                            ref={renameInputRef}
                             value={renameValue}
                             onChange={(e) => setRenameValue(e.target.value)}
                             onBlur={commitRename}

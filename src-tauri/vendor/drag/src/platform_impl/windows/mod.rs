@@ -279,7 +279,10 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                     paths.push(dunce::canonicalize(f)?);
                 }
 
-                let data_object: IDataObject = get_file_data_object(&paths).unwrap();
+                // The shell may refuse paths it cannot parse (virtual / cloud drives, odd names,
+                // files removed meanwhile). Report that instead of panicking inside the window loop.
+                let data_object: IDataObject =
+                    get_file_data_object(&paths).ok_or(crate::Error::FailedToStartDrag)?;
                 let drop_source: IDropSource = DropSource::new().into();
 
                 unsafe {
@@ -321,7 +324,8 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
 
                 let paths = vec![dunce::canonicalize("./")?];
 
-                let data_object: IDataObject = get_file_data_object(&paths).unwrap();
+                let data_object: IDataObject =
+                    get_file_data_object(&paths).ok_or(crate::Error::FailedToStartDrag)?;
                 let drop_source: IDropSource = DummyDropSource::new().into();
 
                 unsafe {
@@ -389,8 +393,11 @@ fn get_drag_image(image: Image) -> Option<SHDRAGIMAGE> {
 }
 
 fn get_hglobal(size: usize, buffer: Vec<u16>) -> Result<HGLOBAL> {
-    let handle = unsafe { GlobalAlloc(GMEM_FIXED, size).unwrap() };
+    let handle = unsafe { GlobalAlloc(GMEM_FIXED, size)? };
     let ptr = unsafe { GlobalLock(handle) };
+    if ptr.is_null() {
+        return Err(Error::from(E_OUTOFMEMORY));
+    }
 
     let header = ptr as *mut DROPFILES;
     unsafe {
@@ -412,17 +419,23 @@ pub fn create_instance<T: Interface + ComInterface>(clsid: &GUID) -> Result<T> {
 
 fn get_file_data_object(paths: &[PathBuf]) -> Option<IDataObject> {
     unsafe {
-        let shell_item_array = get_shell_item_array(paths).unwrap();
+        let shell_item_array = get_shell_item_array(paths)?;
         shell_item_array.BindToHandler(None, &BHID_DataObject).ok()
     }
 }
 
 fn get_shell_item_array(paths: &[PathBuf]) -> Option<IShellItemArray> {
     unsafe {
+        // ILCreateFromPathW returns null for a path the shell cannot parse; a null entry must never
+        // reach SHCreateShellItemArrayFromIDLists. Such paths are skipped, the rest can still be dragged.
         let list: Vec<*const Common::ITEMIDLIST> = paths
             .iter()
             .map(|path| get_file_item_id(path).cast_const())
+            .filter(|pidl| !pidl.is_null())
             .collect();
+        if list.is_empty() {
+            return None;
+        }
         SHCreateShellItemArrayFromIDLists(&list).ok()
     }
 }

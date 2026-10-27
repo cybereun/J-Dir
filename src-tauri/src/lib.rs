@@ -311,19 +311,26 @@ fn cmd_start_drag(window: tauri::Window, paths: Vec<String>, allow_move: bool) -
     if files.is_empty() {
         return Err("끌어갈 파일을 찾을 수 없습니다.".to_string());
     }
-    drag::start_drag(
-        &window,
-        drag::DragItem::Files(files),
-        drag::Image::Raw(DRAG_ICON.to_vec()),
-        |_result, _cursor| {},
-        // A plain drag copies; starting it with Shift held also allows moving (Explorer then
-        // decides copy/move for outside targets, J-Dir's own panes follow Shift at drop time).
-        drag::Options {
-            mode: if allow_move { drag::DragMode::CopyMove } else { drag::DragMode::Copy },
-            ..Default::default()
-        },
-    )
-    .map_err(|e| format!("파일 끌기 실패: {}", e))
+    // A panic here would take the whole app down (this runs inside the window message loop), so any
+    // failure while building the shell data object is turned into an ordinary error instead.
+    let started = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drag::start_drag(
+            &window,
+            drag::DragItem::Files(files),
+            drag::Image::Raw(DRAG_ICON.to_vec()),
+            |_result, _cursor| {},
+            // A plain drag copies; starting it with Shift held also allows moving (Explorer then
+            // decides copy/move for outside targets, J-Dir's own panes follow Shift at drop time).
+            drag::Options {
+                mode: if allow_move { drag::DragMode::CopyMove } else { drag::DragMode::Copy },
+                ..Default::default()
+            },
+        )
+    }));
+    match started {
+        Ok(result) => result.map_err(|e| format!("파일 끌기 실패: {}", e)),
+        Err(_) => Err("파일 끌기를 시작하지 못했습니다. (셸이 이 경로를 처리하지 못했습니다)".to_string()),
+    }
 }
 
 const PREVIEW_WINDOW: &str = "preview";

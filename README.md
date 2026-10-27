@@ -7,7 +7,7 @@
 **Windows를 위한 고성능 4분할(Quad-Pane) 전문가용 파일 탐색기**
 
 [![Developer](https://img.shields.io/badge/Developer-Lebi__Cybereun-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/cybereun)
-[![Release](https://img.shields.io/badge/Release-v1.2.3-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.2.4-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/cybereun/J-Dir/releases)
 [![Tech Stack](https://img.shields.io/badge/Built%20With-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-f59e0b?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/cybereun/J-Dir)
 
@@ -80,6 +80,10 @@
 - **편의 기능**: 결과 목록·미리보기 경계선 드래그 조절, 사이드바 ↔ 팝업 창 전환 시 검색 상태 유지, [폴더에서 보기]로 J-Dir 패널에서 해당 파일 선택(Shift+클릭: Windows 탐색기).
 
 ---
+
+## v1.2.4 변경 사항
+- **이름 변경 시 확장자 보호**: 이름 변경을 시작하면 Windows 탐색기처럼 확장자를 뺀 이름 부분만 선택됩니다. (폴더는 이름 전체 선택)
+- **파일 끌기 중 종료 방지**: 셸이 경로를 처리하지 못하는 파일을 끌 때 앱이 꺼지던 문제에 대비해 방어 코드를 넣었습니다. 이제 오류 메시지만 표시되고 앱은 유지됩니다.
 
 ## v1.2.3 변경 사항
 - **창 위치 기억**: 여러 모니터를 쓸 때 J-Dir를 옮겨 놓고 종료하면, 다음 실행에서 같은 모니터의 같은 위치·크기(최대화 포함)로 열립니다. 저장된 모니터가 연결되어 있지 않으면 화면 중앙에서 열립니다.

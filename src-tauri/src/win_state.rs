@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Window};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow, Window};
 
 pub const MAIN_WINDOW: &str = "main";
 const FILE_NAME: &str = "window-state.json";
@@ -69,9 +69,16 @@ pub fn save(window: &Window) {
     }
 }
 
-/// Moves the main window back to where it was, if that spot is still on a connected monitor.
+/// Moves the main window back to where it was (if that spot is still on a connected monitor) and
+/// only then shows it. The window is created hidden (`visible: false` in tauri.conf.json), so it
+/// never flashes at the default spot first. It is shown on every path, even when nothing is restored.
 pub fn restore(app: &AppHandle) {
     let Some(win) = app.get_webview_window(MAIN_WINDOW) else { return };
+    apply_saved(app, &win);
+    let _ = win.show();
+}
+
+fn apply_saved(app: &AppHandle, win: &WebviewWindow) {
     let Some(path) = state_path(app) else { return };
     let Ok(text) = std::fs::read_to_string(path) else { return };
     let Ok(saved) = serde_json::from_str::<SavedState>(&text) else { return };

@@ -268,6 +268,21 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
   // Inline create modal/bar state
   const [creatingMode, setCreatingMode] = useState<"folder" | "file" | null>(null);
   const [createNameInput, setCreateNameInput] = useState<string>("");
+  const createInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Like Windows Explorer: the default name is pre-selected so typing replaces it at once
+  // (for a file only the base name, so the extension stays).
+  useEffect(() => {
+    const input = createInputRef.current;
+    if (!creatingMode || !input) return;
+    const name = input.value;
+    const dot = name.lastIndexOf(".");
+    const end = creatingMode === "folder" || dot <= 0 ? name.length : dot;
+    input.focus();
+    input.setSelectionRange(0, end);
+    // only when the bar opens (or switches between folder/file), never while the user is typing
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creatingMode]);
 
   // Quick-Link dropdown
   const [showQuickLinksMenu, setShowQuickLinksMenu] = useState<boolean>(false);
@@ -1106,6 +1121,7 @@ export const ExplorerPane: React.FC<ExplorerPaneProps> = ({
           <input
             type="text"
             className="inline-create-input"
+            ref={createInputRef}
             value={createNameInput}
             onChange={(e) => setCreateNameInput(e.target.value)}
             autoFocus

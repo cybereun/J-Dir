@@ -1,7 +1,7 @@
 {
   "name": "j-dir",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "scripts": {
     "dev": "vite -c C:/Users/cybereun/AppData/Local/J-Dir-Cache/vite.config.mjs",

@@ -1,6 +1,7 @@
 //! Opt-in full-text index of user-chosen folders, stored in an encrypted (SQLCipher) database.
 
 pub mod db;
+mod batching;
 pub mod indexer;
 pub mod key;
 pub mod parser;

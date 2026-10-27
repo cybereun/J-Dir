@@ -325,14 +325,21 @@ export const SearchTab: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indexDoneTick]);
 
+  // Show newly committed results while indexing, without disturbing an open preview.
+  useEffect(() => {
+    if (!progress?.running || !query.trim() || selected) return;
+    const timer = window.setInterval(() => void runSearch(false), 2500);
+    return () => window.clearInterval(timer);
+  }, [progress?.running, query, mode, extGroup, folderFilter, selected, runSearch]);
+
   const addFolder = async () => {
     try {
       const picked = await openDialog({ directory: true, multiple: false });
       if (typeof picked !== "string") return;
-      await apiIndexAddFolder(picked);
+      const folderId = await apiIndexAddFolder(picked);
       await refreshFolders();
       setIndexOpen(true);
-      await apiIndexStart(null);
+      await apiIndexStart(folderId);
       setNotice({ text: "폴더를 추가하고 색인을 시작했습니다.", error: false });
     } catch (err) {
       setNotice({ text: String(err).replace(/^Error:\s*/, ""), error: true });
@@ -380,7 +387,7 @@ export const SearchTab: React.FC = () => {
             </span>
           </button>
           <div className="st-index-actions">
-            <button type="button" className="mini-ghost-btn" onClick={() => void addFolder()} title="검색할 폴더를 추가합니다">
+            <button type="button" className="mini-ghost-btn" disabled={running} onClick={() => void addFolder()} title="검색할 폴더를 추가합니다">
               <FolderPlus size={12} /> 폴더 추가
             </button>
             <button

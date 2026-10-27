@@ -23,8 +23,14 @@ impl SecretKey {
 pub fn load_or_create(dir: &Path) -> Result<SecretKey, String> {
     fs::create_dir_all(dir).map_err(|e| format!("색인 폴더 생성 실패: {}", e))?;
     let key_path = dir.join("key.dat");
-    if let Ok(protected) = fs::read(&key_path) {
-        return unprotect(&protected);
+    match fs::read(&key_path) {
+        Ok(protected) => return unprotect(&protected),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if dir.join("index.db").exists() || dir.join("index.db-wal").exists() {
+                return Err("기존 색인 DB의 암호화 키가 없어 색인을 열 수 없습니다. 기존 파일을 보존했습니다.".into());
+            }
+        }
+        Err(e) => return Err(format!("색인 키를 읽을 수 없습니다: {}", e)),
     }
     let mut bytes = [0u8; KEY_LEN];
     getrandom::fill(&mut bytes).map_err(|e| format!("키 생성 실패: {}", e))?;
@@ -95,6 +101,19 @@ fn unprotect(protected: &[u8]) -> Result<SecretKey, String> {
         data.fill(0);
         LocalFree(output.pbData as *mut core::ffi::c_void);
         Ok(SecretKey(key))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn existing_database_without_key_must_not_generate_a_new_key() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("index.db"), b"existing database").unwrap();
+        assert!(load_or_create(dir.path()).is_err());
+        assert!(!dir.path().join("key.dat").exists());
     }
 }
 

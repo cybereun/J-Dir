@@ -1,4 +1,5 @@
 use super::db;
+use super::batching::should_commit;
 use super::key::SecretKey;
 use super::parser::{default_pool_size, ParserPool};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -18,7 +19,6 @@ pub const INDEXED_EXTS: &[&str] = &[
 const MAX_TEXT_FILE: u64 = 20 * 1024 * 1024;
 const MAX_DOC_FILE: u64 = 150 * 1024 * 1024;
 const MAX_BODY_CHARS: usize = 3_000_000;
-const BATCH: usize = 25;
 /// Discovered files waiting for a parser; bounds memory while the scan runs ahead of the parsers.
 const QUEUE_DEPTH: usize = 512;
 const SKIP_DIRS: &[&str] = &["node_modules", ".git", ".svn", "$recycle.bin", "system volume information", "$windows.~bt"];
@@ -179,6 +179,7 @@ impl IndexService {
 
         let workers = self.parser.size();
         let discovered = AtomicU64::new(0);
+        let scan_failed = AtomicBool::new(false);
         let (cand_tx, cand_rx) = mpsc::sync_channel::<Candidate>(QUEUE_DEPTH);
         let cand_rx = Mutex::new(cand_rx);
         let (res_tx, res_rx) = mpsc::channel::<Extracted>();
@@ -186,12 +187,14 @@ impl IndexService {
         let mut errors = 0u64;
         let mut done = 0u64;
         let mut in_batch = 0usize;
+        let mut batch_started = Instant::now();
         let mut last_emit = Instant::now();
         let mut write_error: Option<String> = None;
         conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
 
         let existing_ref = &existing;
         let discovered_ref = &discovered;
+        let scan_failed_ref = &scan_failed;
         let me = self;
         let seen: Option<HashSet<String>> = std::thread::scope(|scope| {
             // Scanner: walks the folder and queues new/changed files. It owns the queue's sender,
@@ -206,7 +209,13 @@ impl IndexService {
                     if visited % 200 == 0 && me.cancel.load(Ordering::SeqCst) {
                         return None;
                     }
-                    let Ok(entry) = entry else { continue };
+                    let entry = match entry {
+                        Ok(entry) => entry,
+                        Err(_) => {
+                            scan_failed_ref.store(true, Ordering::Relaxed);
+                            continue;
+                        }
+                    };
                     if !entry.file_type().is_file() {
                         continue;
                     }
@@ -218,7 +227,13 @@ impl IndexService {
                     if !INDEXED_EXTS.contains(&ext.as_str()) {
                         continue;
                     }
-                    let Ok(meta) = entry.metadata() else { continue };
+                    let meta = match entry.metadata() {
+                        Ok(meta) => meta,
+                        Err(_) => {
+                            scan_failed_ref.store(true, Ordering::Relaxed);
+                            continue;
+                        }
+                    };
                     let size = meta.len();
                     let mtime_ms = meta
                         .modified()
@@ -237,7 +252,7 @@ impl IndexService {
                         return None; // workers are gone (cancelled or storage failure)
                     }
                 }
-                Some(seen)
+                if scan_failed_ref.load(Ordering::Relaxed) { None } else { Some(seen) }
             });
 
             // Parser workers: one process each, so slow documents only delay their own worker.
@@ -263,7 +278,24 @@ impl IndexService {
             drop(res_tx);
 
             // Writer (this thread): store results in batches and report progress.
-            for res in res_rx {
+            loop {
+                let res = match res_rx.recv_timeout(Duration::from_millis(200)) {
+                    Ok(res) => Some(res),
+                    Err(mpsc::RecvTimeoutError::Timeout) => None,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                };
+                if res.is_none() {
+                    if should_commit(in_batch, batch_started.elapsed()) && write_error.is_none() {
+                        if let Err(e) = conn.execute_batch("COMMIT; BEGIN") {
+                            write_error = Some(e.to_string());
+                            self.cancel.store(true, Ordering::SeqCst);
+                        }
+                        in_batch = 0;
+                        batch_started = Instant::now();
+                    }
+                    continue;
+                }
+                let res = res.unwrap();
                 if res.status == "error" {
                     errors += 1;
                 }
@@ -276,9 +308,13 @@ impl IndexService {
                 }
                 done += 1;
                 in_batch += 1;
-                if in_batch >= BATCH {
-                    let _ = conn.execute_batch("COMMIT; BEGIN");
+                if should_commit(in_batch, batch_started.elapsed()) && write_error.is_none() {
+                    if let Err(e) = conn.execute_batch("COMMIT; BEGIN") {
+                        write_error = Some(e.to_string());
+                        self.cancel.store(true, Ordering::SeqCst);
+                    }
                     in_batch = 0;
+                    batch_started = Instant::now();
                 }
                 if last_emit.elapsed() > Duration::from_millis(150) {
                     last_emit = Instant::now();
@@ -298,6 +334,9 @@ impl IndexService {
         conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
         if let Some(e) = write_error {
             return Err(e);
+        }
+        if scan_failed.load(Ordering::Relaxed) && !self.cancel.load(Ordering::SeqCst) {
+            return Err("일부 폴더나 파일을 읽지 못해 기존 색인을 보존했습니다. 드라이브 연결과 접근 권한을 확인한 뒤 다시 갱신해 주세요.".into());
         }
         let total = discovered.load(Ordering::Relaxed);
         self.set_progress(app, |p| {

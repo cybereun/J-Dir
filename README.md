@@ -7,7 +7,7 @@
 **Windows를 위한 고성능 4분할(Quad-Pane) 전문가용 파일 탐색기**
 
 [![Developer](https://img.shields.io/badge/Developer-Lebi__Cybereun-2563eb?style=for-the-badge&logo=github&logoColor=white)](https://github.com/cybereun)
-[![Release](https://img.shields.io/badge/Release-v1.2.5-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.2.6-10b981?style=for-the-badge&logo=github)](https://github.com/cybereun/J-Dir/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/cybereun/J-Dir/releases)
 [![Tech Stack](https://img.shields.io/badge/Built%20With-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-f59e0b?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/cybereun/J-Dir)
 
@@ -80,6 +80,10 @@
 - **편의 기능**: 결과 목록·미리보기 경계선 드래그 조절, 사이드바 ↔ 팝업 창 전환 시 검색 상태 유지, [폴더에서 보기]로 J-Dir 패널에서 해당 파일 선택(Shift+클릭: Windows 탐색기).
 
 ---
+
+## v1.2.6 변경 사항
+- **색인 중 검색**: 문서 분석 결과를 순차적으로 반영하고, 새 폴더만 색인합니다.
+- **기존 색인 보존**: 폴더 접근 실패 시 기존 색인 항목을 삭제하지 않고, 암호화 키가 없으면 기존 DB를 보존합니다.
 
 ## v1.2.5 변경 사항
 - **시작 시 깜빡임 제거**: 여러 모니터에서 실행할 때 주 모니터에 먼저 나타났다가 기억된 모니터로 이동하던 현상을 없앴습니다. 이제 처음부터 기억된 모니터의 제자리에서 열립니다.

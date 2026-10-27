@@ -396,4 +396,27 @@ mod tests {
         let s = make_snippet("The Quick brown fox", &["quick".to_string()]);
         assert!(s.contains(&format!("{}Quick{}", MARK_OPEN, MARK_CLOSE)), "{}", s);
     }
+
+    #[test]
+    fn encrypted_index_survives_reopening_with_persisted_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs = dir.path().join("docs");
+        std::fs::create_dir(&docs).unwrap();
+        let data = dir.path().join("index");
+        let db_path = data.join("index.db");
+        let key = super::super::key::load_or_create(&data).unwrap();
+        let conn = open(&db_path, &key).unwrap();
+        let folder = add_folder(&conn, &docs.to_string_lossy()).unwrap();
+        insert(&conn, folder, "C:\\test\\memo.txt", "memo.txt", "txt", "persistent searchable content");
+        drop(conn);
+        drop(key);
+
+        let reopened_key = super::super::key::load_or_create(&data).unwrap();
+        let reopened = open(&db_path, &reopened_key).unwrap();
+        let request = SearchRequest {
+            text: "searchable".into(), mode: "keyword".into(), exts: vec![], folder_id: None, limit: None, offset: None,
+        };
+        assert_eq!(list_folders(&reopened).unwrap()[0].doc_count, 1);
+        assert_eq!(search(&reopened, &request).unwrap().total, 1);
+    }
 }
